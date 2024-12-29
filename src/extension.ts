@@ -14,19 +14,99 @@ export function activate(context: vscode.ExtensionContext) {
   // The command has been defined in the package.json file
   // Now provide the implementation of the command with registerCommand
   // The commandId parameter must match the command field in package.json
-  const disposable = vscode.commands.registerCommand(
-    'turbo-flutter-log.helloWorld',
-    () => {
-      // The code you place here will be executed every time your command is executed
-      // Display a message box to the user
-      vscode.window.showInformationMessage(
-        'Hello World from turbo-flutter-log!',
-      );
-    },
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'turbo-flutter-log.displayLogMessage',
+      () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const lineText = editor.document.lineAt(
+            editor.selection.active.line,
+          ).text;
+          const logStatement = `print("${lineText}");`;
+          editor.edit((editBuilder) => {
+            editBuilder.insert(editor.selection.active, logStatement);
+          });
+        }
+      },
+    ),
   );
 
-  context.subscriptions.push(disposable);
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'turbo-flutter-log.commentAllLogMessages',
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const document = editor.document;
+          const text = document.getText();
+          const updatedText = text.replace(
+            /print\(.*\);/g,
+            (match) => `// ${match}`,
+          );
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(
+            document.uri,
+            new vscode.Range(0, 0, document.lineCount, 0),
+            updatedText,
+          );
+          await vscode.workspace.applyEdit(edit);
+        }
+      },
+    ),
+  );
+
+  // Uncomment all log messages
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'turbo-flutter-log.uncommentAllLogMessages',
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const document = editor.document;
+          const text = document.getText();
+          const updatedText = text.replace(/\/\/\s*print\(.*\);/g, (match) =>
+            match.replace('// ', ''),
+          );
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(
+            document.uri,
+            new vscode.Range(0, 0, document.lineCount, 0),
+            updatedText,
+          );
+          await vscode.workspace.applyEdit(edit);
+        }
+      },
+    ),
+  );
+
+  // Delete all log messages
+  context.subscriptions.push(
+    vscode.commands.registerCommand(
+      'turbo-flutter-log.deleteAllLogMessages',
+      async () => {
+        const editor = vscode.window.activeTextEditor;
+        if (editor) {
+          const document = editor.document;
+          const text = document.getText();
+          const updatedText = text.replace(/print\(.*\);/g, '');
+          const edit = new vscode.WorkspaceEdit();
+          edit.replace(
+            document.uri,
+            new vscode.Range(0, 0, document.lineCount, 0),
+            updatedText,
+          );
+          await vscode.workspace.applyEdit(edit);
+        }
+      },
+    ),
+  );
 }
 
 // This method is called when your extension is deactivated
 export function deactivate() {}
+
+function generateLogStatement(selectedText: string): string {
+  const timestamp = new Date().toISOString();
+  return `console.log("[DEBUG - ${timestamp}] ${selectedText}: ", ${selectedText});\n`;
+}

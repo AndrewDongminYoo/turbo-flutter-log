@@ -10,13 +10,27 @@
   "categories": [
     "Other"
   ],
-  "activationEvents": [],
+  "activationEvents": [
+    "onLanguage:dart"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
       {
-        "command": "turbo-flutter-log.helloWorld",
-        "title": "Hello World"
+        "command": "turbo-flutter-log.displayLogMessage",
+        "title": "Turbo Flutter Log: Display Log Message"
+      },
+      {
+        "command": "turbo-flutter-log.commentAllLogMessages",
+        "title": "Turbo Flutter Log: Comment All Log Messages"
+      },
+      {
+        "command": "turbo-flutter-log.uncommentAllLogMessages",
+        "title": "Turbo Flutter Log: Uncomment All Log Messages"
+      },
+      {
+        "command": "turbo-flutter-log.deleteAllLogMessages",
+        "title": "Turbo Flutter Log: Delete All Log Messages"
       }
     ]
   },
