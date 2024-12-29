@@ -19,39 +19,53 @@ export function activate(context: vscode.ExtensionContext) {
       'turbo-flutter-log.displayLogMessage',
       () => {
         const editor = vscode.window.activeTextEditor;
-        if (editor) {
-          const lineText = editor.document.lineAt(
-            editor.selection.active.line,
-          ).text;
-          const logStatement = `print("${lineText}");`;
-          editor.edit((editBuilder) => {
-            editBuilder.insert(editor.selection.active, logStatement);
-          });
+        if (!editor) {
+          vscode.window.showErrorMessage('No active editor found.');
+          return;
         }
+        const document = editor.document;
+        const selection = editor.selection;
+
+        // 현재 커서 위치 또는 선택된 텍스트
+        const selectedText = document.getText(selection);
+        const lineNumber = selection.active.line;
+        const lineText = document.lineAt(lineNumber).text;
+
+        // 기본 로그 포맷 정의
+        const logStatement = generateLogStatement(selectedText || lineText);
+
+        // 현재 커서 아래에 로그 문 삽입
+        editor.edit((editBuilder) => {
+          const position = new vscode.Position(lineNumber + 1, 0); // 다음 줄
+          editBuilder.insert(position, logStatement);
+        });
       },
     ),
   );
 
+  // Comment all log messages
   context.subscriptions.push(
     vscode.commands.registerCommand(
       'turbo-flutter-log.commentAllLogMessages',
       async () => {
         const editor = vscode.window.activeTextEditor;
-        if (editor) {
-          const document = editor.document;
-          const text = document.getText();
-          const updatedText = text.replace(
-            /print\(.*\);/g,
-            (match) => `// ${match}`,
-          );
-          const edit = new vscode.WorkspaceEdit();
-          edit.replace(
-            document.uri,
-            new vscode.Range(0, 0, document.lineCount, 0),
-            updatedText,
-          );
-          await vscode.workspace.applyEdit(edit);
+        if (!editor) {
+          vscode.window.showErrorMessage('No active editor found.');
+          return;
         }
+        const document = editor.document;
+        const text = document.getText();
+        const updatedText = text.replace(
+          /print\(.*\);/g,
+          (match) => `// ${match}`,
+        );
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+          document.uri,
+          new vscode.Range(0, 0, document.lineCount, 0),
+          updatedText,
+        );
+        await vscode.workspace.applyEdit(edit);
       },
     ),
   );
@@ -62,20 +76,22 @@ export function activate(context: vscode.ExtensionContext) {
       'turbo-flutter-log.uncommentAllLogMessages',
       async () => {
         const editor = vscode.window.activeTextEditor;
-        if (editor) {
-          const document = editor.document;
-          const text = document.getText();
-          const updatedText = text.replace(/\/\/\s*print\(.*\);/g, (match) =>
-            match.replace('// ', ''),
-          );
-          const edit = new vscode.WorkspaceEdit();
-          edit.replace(
-            document.uri,
-            new vscode.Range(0, 0, document.lineCount, 0),
-            updatedText,
-          );
-          await vscode.workspace.applyEdit(edit);
+        if (!editor) {
+          vscode.window.showErrorMessage('No active editor found.');
+          return;
         }
+        const document = editor.document;
+        const text = document.getText();
+        const updatedText = text.replace(/\/\/\s*print\(.*\);/g, (match) =>
+          match.replace('// ', ''),
+        );
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+          document.uri,
+          new vscode.Range(0, 0, document.lineCount, 0),
+          updatedText,
+        );
+        await vscode.workspace.applyEdit(edit);
       },
     ),
   );
@@ -86,18 +102,20 @@ export function activate(context: vscode.ExtensionContext) {
       'turbo-flutter-log.deleteAllLogMessages',
       async () => {
         const editor = vscode.window.activeTextEditor;
-        if (editor) {
-          const document = editor.document;
-          const text = document.getText();
-          const updatedText = text.replace(/print\(.*\);/g, '');
-          const edit = new vscode.WorkspaceEdit();
-          edit.replace(
-            document.uri,
-            new vscode.Range(0, 0, document.lineCount, 0),
-            updatedText,
-          );
-          await vscode.workspace.applyEdit(edit);
+        if (!editor) {
+          vscode.window.showErrorMessage('No active editor found.');
+          return;
         }
+        const document = editor.document;
+        const text = document.getText();
+        const updatedText = text.replace(/print\(.*\);/g, '');
+        const edit = new vscode.WorkspaceEdit();
+        edit.replace(
+          document.uri,
+          new vscode.Range(0, 0, document.lineCount, 0),
+          updatedText,
+        );
+        await vscode.workspace.applyEdit(edit);
       },
     ),
   );
@@ -108,5 +126,5 @@ export function deactivate() {}
 
 function generateLogStatement(selectedText: string): string {
   const timestamp = new Date().toISOString();
-  return `console.log("[DEBUG - ${timestamp}] ${selectedText}: ", ${selectedText});\n`;
+  return `print("[DEBUG - ${timestamp}] ${selectedText}: ", ${selectedText});\n`;
 }
