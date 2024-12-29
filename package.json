@@ -11,10 +11,35 @@
     "Other"
   ],
   "activationEvents": [
-    "onLanguage:dart"
+    "onLanguage:dart",
+    "workspaceContains:pubspec.yaml"
   ],
   "main": "./dist/extension.js",
   "contributes": {
+    "configuration": {
+      "type": "object",
+      "title": "Turbo Flutter Log Configuration",
+      "properties": {
+        "turbo-flutter-log.logLevel": {
+          "type": "string",
+          "enum": [
+            "trace",
+            "debug",
+            "info",
+            "warning",
+            "error",
+            "fatal"
+          ],
+          "default": "debug",
+          "description": "Select the log level"
+        },
+        "turbo-flutter-log.logFunction": {
+          "type": "string",
+          "default": "print",
+          "description": "Specify a log function. Default is print"
+        }
+      }
+    },
     "commands": [
       {
         "command": "turbo-flutter-log.displayLogMessage",
@@ -60,6 +85,5 @@
     "typescript": "^5.7.2",
     "@vscode/test-cli": "^0.0.10",
     "@vscode/test-electron": "^2.4.1"
-  },
-  "packageManager": "yarn@1.22.22+sha1.ac34549e6aa8e7ead463a7407e1c7390f61a6610"
+  }
 }

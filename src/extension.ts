@@ -26,15 +26,15 @@ export function activate(context: vscode.ExtensionContext) {
         const document = editor.document;
         const selection = editor.selection;
 
-        // 현재 커서 위치 또는 선택된 텍스트
+        // Current cursor position or selected text
         const selectedText = document.getText(selection);
         const lineNumber = selection.active.line;
         const lineText = document.lineAt(lineNumber).text;
 
-        // 기본 로그 포맷 정의
+        // Define the default log format
         const logStatement = generateLogStatement(selectedText || lineText);
 
-        // 현재 커서 아래에 로그 문 삽입
+        // Insert a log statement under the current cursor
         editor.edit((editBuilder) => {
           const position = new vscode.Position(lineNumber + 1, 0); // 다음 줄
           editBuilder.insert(position, logStatement);
@@ -53,12 +53,19 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage('No active editor found.');
           return;
         }
+
         const document = editor.document;
         const text = document.getText();
-        const updatedText = text.replace(
-          /print\(.*\);/g,
-          (match) => `// ${match}`,
+
+        // Get `logFunction` from settings
+        const config = vscode.workspace.getConfiguration('turbo-flutter-log');
+        const logFunction = config.get<string>('logFunction', 'print');
+        const regex = new RegExp(
+          `${logFunction}\$begin:math:text$.*\\$end:math:text$;`,
+          'g',
         );
+
+        const updatedText = text.replace(regex, (match) => `// ${match}`);
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
           document.uri,
@@ -80,11 +87,23 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage('No active editor found.');
           return;
         }
+
         const document = editor.document;
         const text = document.getText();
-        const updatedText = text.replace(/\/\/\s*print\(.*\);/g, (match) =>
+
+        // Get `logFunction` from settings
+        const config = vscode.workspace.getConfiguration('turbo-flutter-log');
+        const logFunction = config.get<string>('logFunction', 'print');
+        const regex = new RegExp(
+          `\/\/\\s*${logFunction}\$begin:math:text$.*\\$end:math:text$;`,
+          'g',
+        );
+
+        // Uncomment by removing the '//' part
+        const updatedText = text.replace(regex, (match) =>
           match.replace('// ', ''),
         );
+
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
           document.uri,
@@ -106,9 +125,19 @@ export function activate(context: vscode.ExtensionContext) {
           vscode.window.showErrorMessage('No active editor found.');
           return;
         }
+
         const document = editor.document;
         const text = document.getText();
-        const updatedText = text.replace(/print\(.*\);/g, '');
+
+        // Get `logFunction` from settings
+        const config = vscode.workspace.getConfiguration('turbo-flutter-log');
+        const logFunction = config.get<string>('logFunction', 'print');
+        const regex = new RegExp(
+          `${logFunction}\$begin:math:text$.*\\$end:math:text$;`,
+          'g',
+        );
+
+        const updatedText = text.replace(regex, '');
         const edit = new vscode.WorkspaceEdit();
         edit.replace(
           document.uri,
@@ -121,10 +150,16 @@ export function activate(context: vscode.ExtensionContext) {
   );
 }
 
-// This method is called when your extension is deactivated
 export function deactivate() {}
 
+/**
+ * Functions to construct log statements with set values (`logFunction`, `logLevel`)
+ */
 function generateLogStatement(selectedText: string): string {
+  const config = vscode.workspace.getConfiguration('turbo-flutter-log');
+  const logFunction = config.get<string>('logFunction', 'print');
+  const logLevel = config.get<string>('logLevel', 'debug');
   const timestamp = new Date().toISOString();
-  return `print("[DEBUG - ${timestamp}] ${selectedText}: ", ${selectedText});\n`;
+
+  return `${logFunction}("[${logLevel.toUpperCase()} - ${timestamp}] ${selectedText}: ", ${selectedText});\n`;
 }
