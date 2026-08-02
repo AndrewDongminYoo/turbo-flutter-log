@@ -7,7 +7,16 @@ import {
   type TurboConfig,
 } from './config';
 import { findEnclosingChain, type SymbolNode } from './symbols';
-import { chooseExpression, chooseStatementText } from './target';
+import { DEFAULT_PAGE_WIDTH, parsePageWidth } from './width';
+import {
+  assignmentIndex,
+  chooseExpression,
+  chooseStatementText,
+  declaredNameIn,
+  isDeclarationModifier,
+  isLoggableExpression,
+  isLoggableIdentifier,
+} from './target';
 
 const SECTION = 'turbo-flutter-log';
 
@@ -128,6 +137,46 @@ export function resetProviderWarning(): void {
   warnedAboutProvider = false;
 }
 
+/**
+ * Finds the page width `dart format` will wrap at, by walking up from the file to the nearest
+ * `analysis_options.yaml` that declares one.
+ *
+ * The walk stops at the workspace folder, so a stray file outside the project cannot set the width.
+ * Falling back to `dart format`'s own default errs toward shorter logs, which is the safe direction:
+ * a log that overflows gets split by the formatter and the bulk commands can no longer find it.
+ */
+export async function readPageWidth(
+  document: vscode.TextDocument,
+): Promise<number> {
+  const root = vscode.workspace.getWorkspaceFolder(document.uri)?.uri.path;
+  let directory = vscode.Uri.joinPath(document.uri, '..');
+
+  for (let depth = 0; depth < 32; depth += 1) {
+    try {
+      const bytes = await vscode.workspace.fs.readFile(
+        vscode.Uri.joinPath(directory, 'analysis_options.yaml'),
+      );
+      const width = parsePageWidth(new TextDecoder().decode(bytes));
+      if (width !== undefined) {
+        return width;
+      }
+    } catch {
+      // No analysis_options.yaml here; keep walking.
+    }
+
+    const parent = vscode.Uri.joinPath(directory, '..');
+    if (parent.path === directory.path) {
+      break;
+    }
+    if (root !== undefined && !parent.path.startsWith(root)) {
+      break;
+    }
+    directory = parent;
+  }
+
+  return DEFAULT_PAGE_WIDTH;
+}
+
 export async function resolveEnclosingSymbols(
   document: vscode.TextDocument,
   line: number,
@@ -152,10 +201,68 @@ export async function resolveEnclosingSymbols(
 }
 
 /**
+ * Picks what to log for a cursor with no selection, in order of preference.
+ *
+ * 1. The variable being assigned, when the cursor is left of the assignment. Everything there is
+ *    prefix — `final`, `Sheet?`, `Map<String, dynamic>` — and none of it is a value.
+ * 2. The analysis server's ranges, which give the whole member chain or index.
+ * 3. The identifier under the cursor, when the innermost range is a declarator or a multi-line statement.
+ *
+ * When none of those produce a value the answer is nothing, and the command says so rather than
+ * emitting a guess: `$final` and `${dismissible: false,}` do not compile.
+ */
+function fromCursor(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+  chain: readonly string[],
+  statement: string | undefined,
+): string {
+  const line = document.lineAt(position.line).text;
+
+  // Left of the assignment is the declaration's prefix — modifiers, a type,
+  // generic arguments — and none of it is a value. The variable being assigned
+  // is what the user meant. This runs before the chain because the chain would
+  // happily hand back the type name.
+  const assignment = assignmentIndex(line);
+  if (assignment >= 0 && position.character <= assignment) {
+    const declared = declaredNameIn(line);
+    if (declared) {
+      return declared;
+    }
+  }
+
+  const fromChain = chooseExpression(chain);
+  if (fromChain) {
+    return fromChain;
+  }
+
+  const wordRange = document.getWordRangeAtPosition(position);
+  const word = wordRange ? document.getText(wordRange) : '';
+
+  // A word followed by a colon is the *name* in a name/value pair — a named
+  // argument, a map key, a label — not a value that can be interpolated.
+  const isName =
+    wordRange !== undefined &&
+    line.slice(wordRange.end.character).trimStart().startsWith(':');
+
+  if (isLoggableIdentifier(word) && !isName) {
+    return word;
+  }
+
+  if (isDeclarationModifier(word)) {
+    return declaredNameIn(statement ?? line) ?? '';
+  }
+
+  // Nothing here is a value. Refusing is the right answer: emitting a guess
+  // produces code that does not compile.
+  return '';
+}
+
+/**
  * Resolves what to log and where to put it.
  *
  * A non-empty selection is taken at face value — the user has already said what they mean.
- * Otherwise the analysis server's nested ranges around the cursor decide, via {@link chooseExpression}.
+ * Otherwise {@link fromCursor} decides, and returns nothing when the cursor is not on a value.
  */
 export async function resolveTarget(
   document: vscode.TextDocument,
@@ -177,19 +284,6 @@ export async function resolveTarget(
   }
   const chain = nodes.map((node) => document.getText(node.range));
 
-  // When the chain yields nothing usable — the innermost range is a declarator
-  // or a whole multi-line statement — the identifier under the cursor is the
-  // best remaining answer, and VS Code already knows where its boundaries are.
-  const fromChain = chooseExpression(chain);
-  const wordRange = document.getWordRangeAtPosition(position);
-  const expression = selection.isEmpty
-    ? fromChain || (wordRange ? document.getText(wordRange) : '')
-    : document.getText(selection).trim();
-
-  if (expression.length === 0 || expression.includes('\n')) {
-    return undefined;
-  }
-
   // The statement may start on an earlier line than the cursor, so its own
   // range decides where the log goes — not an offset from the cursor.
   const statement = chooseStatementText(chain);
@@ -199,6 +293,19 @@ export async function resolveTarget(
     statementIndex === -1
       ? position.line
       : nodes[statementIndex].range.end.line;
+
+  // A selection says what the user meant — but only if it is actually an
+  // expression. Selecting `final` out of `finalObj` is a partial token, and
+  // falling through to the cursor logic recovers `finalObj`.
+  const selected = document.getText(selection).trim();
+  const expression =
+    !selection.isEmpty && isLoggableExpression(selected)
+      ? selected
+      : fromCursor(document, position, chain, statement);
+
+  if (expression.length === 0 || expression.includes('\n')) {
+    return undefined;
+  }
 
   return {
     expression,

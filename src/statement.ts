@@ -1,5 +1,6 @@
 import type { Quote, TurboConfig } from './config';
 import { developerLogLevel } from './levels';
+import { fitsOnOneLine } from './width';
 
 /**
  * Everything the builder needs about where the log is going.
@@ -43,17 +44,47 @@ export function interpolate(expression: string): string {
     : `\${${expression}}`;
 }
 
-function symbolOf(config: TurboConfig, context: LogContext): string {
+/**
+ * Optional parts, in the order they are given up when the line would otherwise overflow.
+ *
+ * The location goes first: the file is already on screen, and the line number drifts with every
+ * later edit. The level tag goes next, since it is usually the same for every log in a session.
+ * The enclosing symbol is the most useful context in console output, so it survives longest, and
+ * the payload is never dropped — it is the whole point of the statement.
+ */
+export type Omission = 'location' | 'level' | 'class' | 'function';
+
+const OMISSION_LADDER: readonly Omission[][] = [
+  [],
+  ['location'],
+  ['location', 'level'],
+  ['location', 'level', 'class'],
+  ['location', 'level', 'class', 'function'],
+];
+
+function symbolOf(
+  config: TurboConfig,
+  context: LogContext,
+  omitted: ReadonlySet<Omission>,
+): string {
   return [
-    config.includeEnclosingClass ? context.enclosingClass : undefined,
-    config.includeEnclosingFunction ? context.enclosingFunction : undefined,
+    config.includeEnclosingClass && !omitted.has('class')
+      ? context.enclosingClass
+      : undefined,
+    config.includeEnclosingFunction && !omitted.has('function')
+      ? context.enclosingFunction
+      : undefined,
   ]
     .filter((part): part is string => Boolean(part))
     .join('.');
 }
 
-function locationOf(config: TurboConfig, context: LogContext): string {
-  if (!config.includeFileName) {
+function locationOf(
+  config: TurboConfig,
+  context: LogContext,
+  omitted: ReadonlySet<Omission>,
+): string {
+  if (!config.includeFileName || omitted.has('location')) {
     return '';
   }
   return config.includeLineNumber
@@ -70,16 +101,19 @@ function locationOf(config: TurboConfig, context: LogContext): string {
 export function buildLogStatement(
   config: TurboConfig,
   context: LogContext,
+  omitted: ReadonlySet<Omission> = new Set(),
 ): string {
   const quote = config.quote;
   const escape = (text: string): string => escapeLiteral(text, quote);
   const isDeveloperLog = config.logFunction === 'developer.log';
-  const symbol = symbolOf(config, context);
+  const symbol = symbolOf(config, context, omitted);
 
   const segments = [
     config.marker,
-    isDeveloperLog ? '' : `[${config.logLevel.toUpperCase()}]`,
-    escape(locationOf(config, context)),
+    isDeveloperLog || omitted.has('level')
+      ? ''
+      : `[${config.logLevel.toUpperCase()}]`,
+    escape(locationOf(config, context, omitted)),
     isDeveloperLog ? '' : escape(symbol),
     `${escape(context.expression)}: ${interpolate(context.expression)}`,
   ].filter((segment) => segment.length > 0);
@@ -97,6 +131,34 @@ export function buildLogStatement(
   args.push(`level: ${developerLogLevel(config.logLevel)}`);
 
   return `${config.developerLogAlias}.log(${args.join(', ')});`;
+}
+
+/**
+ * Builds the statement, giving up optional segments until it fits on one line.
+ *
+ * Overflow is not cosmetic: `dart format` would split the statement across three lines, and the
+ * detection pattern needs the callee and the marker together, so a split log can no longer be
+ * commented or deleted by the bulk commands.
+ *
+ * When even the barest form overflows — a long expression is enough on its own — that form is
+ * returned anyway. Nothing further can be dropped without discarding the value being logged.
+ */
+export function buildLogStatementWithin(
+  config: TurboConfig,
+  context: LogContext,
+  indent: string,
+  pageWidth: number,
+): string {
+  let statement = '';
+
+  for (const omitted of OMISSION_LADDER) {
+    statement = buildLogStatement(config, context, new Set(omitted));
+    if (fitsOnOneLine(statement, indent, pageWidth)) {
+      return statement;
+    }
+  }
+
+  return statement;
 }
 
 /**

@@ -3,6 +3,7 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import {
+  readPageWidth,
   readTurboConfig,
   requireDartEditor,
   resolveEnclosingSymbols,
@@ -10,7 +11,7 @@ import {
 } from '../editor';
 import { planImport } from '../imports';
 import {
-  buildLogStatement,
+  buildLogStatementWithin,
   indentationOf,
   renderStatementBlock,
 } from '../statement';
@@ -39,6 +40,8 @@ export async function displayLogMessage(): Promise<void> {
   );
   const effective = { ...config, developerLogAlias: importPlan.alias };
 
+  const pageWidth = await readPageWidth(document);
+
   const insertions = await Promise.all(
     editor.selections.map(async (selection) => {
       const target = await resolveTarget(document, selection);
@@ -49,23 +52,27 @@ export async function displayLogMessage(): Promise<void> {
       const { enclosingClass, enclosingFunction } =
         await resolveEnclosingSymbols(document, selection.active.line);
 
-      const statement = buildLogStatement(effective, {
-        fileName,
-        // The line of the logged expression, one-based as the editor shows it —
-        // not the line the log itself lands on.
-        lineNumber: target.expressionLine + 1,
-        enclosingClass,
-        enclosingFunction,
-        expression: target.expression,
-      });
+      const indent = indentationOf(
+        document.lineAt(target.insertAfterLine).text,
+      );
+      const statement = buildLogStatementWithin(
+        effective,
+        {
+          fileName,
+          // The line of the logged expression, one-based as the editor shows it —
+          // not the line the log itself lands on.
+          lineNumber: target.expressionLine + 1,
+          enclosingClass,
+          enclosingFunction,
+          expression: target.expression,
+        },
+        indent,
+        pageWidth,
+      );
 
       return {
         line: target.insertAfterLine,
-        text: renderStatementBlock(
-          statement,
-          indentationOf(document.lineAt(target.insertAfterLine).text),
-          effective,
-        ),
+        text: renderStatementBlock(statement, indent, effective),
       };
     }),
   );

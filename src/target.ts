@@ -16,6 +16,151 @@
 const LITERAL = /^(['"`]|[0-9])/;
 
 /**
+ * Words that cannot stand alone as a value reference, so interpolating one produces code that does
+ * not compile — `$final` being the case that surfaced this.
+ *
+ * Dart's reserved words plus the limited reserved words that appear as declaration modifiers, taken
+ * from the keyword table in the language documentation.
+ *
+ * `this` is deliberately absent: it is a reserved word but also a perfectly good thing to log.
+ * The contextual keywords — `hide`, `of`, `on`, `sealed`, `show`, `sync`, `when`, `yield` — are
+ * absent too, because they are usable as identifiers and may well be real variable names.
+ */
+const NOT_A_VALUE = new Set([
+  'abstract',
+  'as',
+  'assert',
+  'async',
+  'await',
+  'break',
+  'case',
+  'catch',
+  'class',
+  'const',
+  'continue',
+  'covariant',
+  'default',
+  'do',
+  'dynamic',
+  'else',
+  'enum',
+  'export',
+  'extends',
+  'extension',
+  'external',
+  'factory',
+  'false',
+  'final',
+  'finally',
+  'for',
+  'Function',
+  'get',
+  'if',
+  'implements',
+  'import',
+  'in',
+  'interface',
+  'is',
+  'late',
+  'library',
+  'mixin',
+  'new',
+  'null',
+  'operator',
+  'part',
+  'required',
+  'return',
+  'set',
+  'static',
+  'super',
+  'switch',
+  'throw',
+  'true',
+  'try',
+  'type',
+  'typedef',
+  'var',
+  'void',
+  'while',
+]);
+
+/** True when `word` can be interpolated as a value. */
+export function isLoggableIdentifier(word: string): boolean {
+  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(word) && !NOT_A_VALUE.has(word);
+}
+
+/**
+ * Keywords that introduce a variable, and so hint at what the user meant when the caret rests on one.
+ * Any other keyword under the cursor is simply not a place a log belongs.
+ */
+const DECLARATION_MODIFIERS = new Set([
+  'final',
+  'const',
+  'var',
+  'late',
+  'static',
+]);
+
+export function isDeclarationModifier(word: string): boolean {
+  return DECLARATION_MODIFIERS.has(word);
+}
+
+/**
+ * Recovers the variable a statement assigns to.
+ *
+ * Covers every shape the left of an assignment takes — a modifier, a type, a generic type, a
+ * nullable type, or nothing at all:
+ *
+ * ```dart
+ * final resolvedCurrency = await repository.load();
+ * Sheet? sheet = await pop<Sheet>(context);
+ * dynamic variable = someFunction();
+ * Map<String, dynamic> map = <String, dynamic>{};
+ * variable = anotherFunction();
+ * ```
+ *
+ * Returns `undefined` when the statement assigns to nothing.
+ */
+export function declaredNameIn(statement: string): string | undefined {
+  const match = /([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/.exec(statement);
+  const name = match?.[1];
+
+  return name !== undefined && isLoggableIdentifier(name) ? name : undefined;
+}
+
+/**
+ * The offset of the assignment `=` at bracket depth zero, or `-1`.
+ *
+ * Everything to its left is the declaration's prefix — modifiers, a type, generic arguments — and
+ * none of it is a value. A cursor there means the variable being assigned, not the type name it
+ * happens to be sitting on: `$Sheet` compiles but logs the string "Sheet", which is never what
+ * anyone wanted.
+ */
+export function assignmentIndex(text: string): number {
+  let depth = 0;
+
+  for (let i = 0; i < text.length; i += 1) {
+    const char = text[i];
+
+    if (char === '(' || char === '[' || char === '{') {
+      depth += 1;
+    } else if (char === ')' || char === ']' || char === '}') {
+      depth -= 1;
+    } else if (
+      depth === 0 &&
+      char === '=' &&
+      text[i + 1] !== '=' &&
+      text[i + 1] !== '>' &&
+      !['=', '!', '<', '>'].includes(text[i - 1] ?? '')
+    ) {
+      return i;
+    }
+  }
+
+  return -1;
+}
+
+/**
  * True when `text` contains, outside any bracket, something that means the expression has stopped being a single value reference.
  *
  * Assignment and statement terminators end the expression.
@@ -42,6 +187,11 @@ export function hasTopLevelStop(text: string): boolean {
       continue;
     }
 
+    if (char === ',' || char === ':') {
+      // A top-level comma or colon means this is not one value: it is a named
+      // argument (`dismissible: false,`), a map entry, or an argument list.
+      return true;
+    }
     if (char === ';' || char === '=') {
       // Assignment, comparison and arrow all end the walk. Distinguishing them
       // would cost a branch and change nothing: for `a == b` the useful
@@ -60,6 +210,53 @@ export function hasTopLevelStop(text: string): boolean {
   }
 
   return false;
+}
+
+/**
+ * True when `text` can stand on its own as a Dart expression, so it may be interpolated.
+ *
+ * Laxer than {@link hasTopLevelStop}, which picks the *best* expression from a chain of candidates.
+ * A deliberate selection may be any expression, `a + b` included — the user said what they meant.
+ * What it may not be is a fragment or a keyword: selecting `final` out of `finalObj` yields `$final`,
+ * which does not compile.
+ */
+export function isLoggableExpression(text: string): boolean {
+  const trimmed = text.trim();
+
+  if (trimmed.length === 0 || trimmed.includes('\n')) {
+    return false;
+  }
+  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
+    return isLoggableIdentifier(trimmed);
+  }
+  // A dangling operator, separator or opening bracket means the selection cut a
+  // token in half.
+  if (/[,;:.+\-*/%&|^<>=!?([{]$/.test(trimmed)) {
+    return false;
+  }
+  if (/^[,;:.*/%&|^>=?)\]}]/.test(trimmed)) {
+    return false;
+  }
+  if (assignmentIndex(trimmed) >= 0) {
+    return false;
+  }
+
+  let depth = 0;
+  for (const char of trimmed) {
+    if (char === '(' || char === '[' || char === '{') {
+      depth += 1;
+    } else if (char === ')' || char === ']' || char === '}') {
+      depth -= 1;
+      if (depth < 0) {
+        return false;
+      }
+    } else if (depth === 0 && (char === ',' || char === ':' || char === ';')) {
+      // More than one thing, or a name/value pair — not a single expression.
+      return false;
+    }
+  }
+
+  return depth === 0;
 }
 
 /**

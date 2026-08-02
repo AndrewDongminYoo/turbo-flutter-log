@@ -1,9 +1,13 @@
 import * as assert from 'assert';
 
 import {
+  assignmentIndex,
   chooseExpression,
   chooseStatementText,
+  declaredNameIn,
   hasTopLevelStop,
+  isLoggableExpression,
+  isLoggableIdentifier,
 } from '../../target';
 
 /**
@@ -193,5 +197,165 @@ suite('chooseStatementText', () => {
       chooseStatementText(['user', 'user.profile']),
       undefined,
     );
+  });
+});
+
+suite('isLoggableIdentifier', () => {
+  test('rejects reserved words that cannot be a value', () => {
+    // Regression: a caret on `final` produced `$final`, which does not compile.
+    for (const word of [
+      'final',
+      'const',
+      'var',
+      'return',
+      'if',
+      'null',
+      'true',
+      'void',
+      'static',
+    ]) {
+      assert.ok(!isLoggableIdentifier(word), word);
+    }
+  });
+
+  test('accepts this, which is reserved but perfectly loggable', () => {
+    assert.ok(isLoggableIdentifier('this'));
+  });
+
+  test('accepts contextual keywords, which may be real variable names', () => {
+    for (const word of ['show', 'hide', 'on', 'of', 'when', 'sealed']) {
+      assert.ok(isLoggableIdentifier(word), word);
+    }
+  });
+
+  test('accepts ordinary identifiers and rejects non-identifiers', () => {
+    assert.ok(isLoggableIdentifier('resolvedCurrency'));
+    assert.ok(isLoggableIdentifier('_private'));
+    assert.ok(!isLoggableIdentifier('user.name'));
+    assert.ok(!isLoggableIdentifier('2fast'));
+    assert.ok(!isLoggableIdentifier(''));
+  });
+});
+
+suite('declaredNameIn', () => {
+  test('recovers the declared variable from a declaration', () => {
+    assert.strictEqual(
+      declaredNameIn('final resolvedCurrency = await repository.load();'),
+      'resolvedCurrency',
+    );
+    assert.strictEqual(
+      declaredNameIn('static const int maxRetries = 3;'),
+      'maxRetries',
+    );
+  });
+
+  test('returns undefined when the statement declares nothing', () => {
+    assert.strictEqual(declaredNameIn('await pendingOperation;'), undefined);
+    assert.strictEqual(declaredNameIn('if (a == b) return;'), undefined);
+  });
+});
+
+suite('not-a-value cursor positions', () => {
+  test('rejects a named argument, which is a name and a value, not one value', () => {
+    // Regression: `dismissible: false,` was accepted and interpolated whole.
+    assert.ok(hasTopLevelStop('dismissible: false,'));
+    assert.ok(hasTopLevelStop('    dismissible: false,'));
+    assert.strictEqual(chooseExpression(['dismissible: false,']), '');
+  });
+
+  test('rejects an argument list', () => {
+    assert.ok(hasTopLevelStop('context, dismissible: false'));
+  });
+
+  test('still accepts a value carrying a comma inside brackets', () => {
+    assert.ok(!hasTopLevelStop('compute(a, b)'));
+    assert.ok(!hasTopLevelStop("m['a']"));
+  });
+});
+
+suite('declaration prefixes', () => {
+  const CASES: [string, string][] = [
+    ['final resolvedCurrency = await repository.load();', 'resolvedCurrency'],
+    ['Sheet? sheet = await pop<Sheet>(context);', 'sheet'],
+    ['dynamic variable = someFunction();', 'variable'],
+    ['Map<String, dynamic> map = <String, dynamic>{};', 'map'],
+    ['variable = anotherFunction();', 'variable'],
+    ['static const int maxRetries = 3;', 'maxRetries'],
+    ['late final List<Sheet> sheets = [];', 'sheets'],
+  ];
+
+  for (const [statement, expected] of CASES) {
+    test(`recovers ${expected} from ${JSON.stringify(statement)}`, () => {
+      assert.strictEqual(declaredNameIn(statement), expected);
+      // Every one of these has an assignment, so a cursor in the prefix is
+      // recognised as being left of it.
+      assert.ok(assignmentIndex(statement) > 0, statement);
+    });
+  }
+
+  test('finds no assignment where there is none', () => {
+    assert.strictEqual(assignmentIndex('await pendingOperation;'), -1);
+    assert.strictEqual(assignmentIndex('dismissible: false,'), -1);
+  });
+
+  test('does not mistake a comparison or an arrow for an assignment', () => {
+    assert.strictEqual(assignmentIndex('if (a == b) return;'), -1);
+    assert.strictEqual(assignmentIndex('items.map((x) => x.id);'), -1);
+    assert.strictEqual(assignmentIndex('a != b;'), -1);
+  });
+
+  test('ignores an assignment nested inside brackets', () => {
+    // The outer statement assigns nothing; the inner one is not the target.
+    assert.strictEqual(assignmentIndex('call(() { x = 1; });'), -1);
+  });
+});
+
+suite('isLoggableExpression', () => {
+  test('accepts expressions a user would deliberately select', () => {
+    for (const text of [
+      'user',
+      'user.profile.name',
+      "m['k']",
+      'compute(a, b)',
+      'a + b',
+      'a == b',
+      'items.map((x) => x.id)',
+      'this',
+    ]) {
+      assert.ok(isLoggableExpression(text), text);
+    }
+  });
+
+  test('rejects a keyword selected out of a longer identifier', () => {
+    // Regression: selecting `final` from `finalObj` emitted `$final`.
+    assert.ok(!isLoggableExpression('final'));
+    assert.ok(!isLoggableExpression('const'));
+    assert.ok(isLoggableExpression('finalObj'));
+  });
+
+  test('rejects a fragment left by a partial selection', () => {
+    for (const text of [
+      'user.',
+      '.name',
+      'compute(',
+      'a +',
+      ')',
+      'user, other',
+      'dismissible: false',
+      'x = 1',
+      '',
+      '  ',
+    ]) {
+      assert.ok(!isLoggableExpression(text), JSON.stringify(text));
+    }
+  });
+
+  test('rejects unbalanced brackets', () => {
+    assert.ok(!isLoggableExpression('compute(a, b'));
+    assert.ok(!isLoggableExpression('a, b)'));
+  });
+
+  test('rejects a multi-line selection', () => {
+    assert.ok(!isLoggableExpression('a +\n  b'));
   });
 });
