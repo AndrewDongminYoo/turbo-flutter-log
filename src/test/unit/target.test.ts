@@ -11,6 +11,7 @@ import {
   isDeclaration,
   isLoggableExpression,
   isLoggableIdentifier,
+  isLoggableName,
 } from '../../target';
 
 /**
@@ -242,6 +243,30 @@ suite('isLoggableIdentifier', () => {
     assert.ok(!isLoggableIdentifier('2fast'));
     assert.ok(!isLoggableIdentifier(''));
   });
+
+  test('declines a built-in identifier, which is more likely a modifier', () => {
+    for (const word of ['external', 'covariant', 'required', 'abstract']) {
+      assert.ok(!isLoggableIdentifier(word), word);
+    }
+  });
+});
+
+suite('isLoggableName', () => {
+  test('accepts built-in identifiers, which are legal variable names', () => {
+    // Regression: a variable actually named `type` could never be logged, because
+    // the one set served both the guess from a caret and a name the position
+    // already proved was a variable. Membership below was verified with
+    // `dart analyze` on `var <word> = 1; print('$<word>');`.
+    for (const word of ['type', 'library', 'part', 'get', 'set', 'dynamic']) {
+      assert.ok(isLoggableName(word), word);
+    }
+  });
+
+  test('still rejects a word Dart refuses as a variable name', () => {
+    for (const word of ['final', 'const', 'var', 'void', 'return', 'await']) {
+      assert.ok(!isLoggableName(word), word);
+    }
+  });
 });
 
 suite('declaredNameIn', () => {
@@ -259,6 +284,15 @@ suite('declaredNameIn', () => {
   test('returns undefined when the statement declares nothing', () => {
     assert.strictEqual(declaredNameIn('await pendingOperation;'), undefined);
     assert.strictEqual(declaredNameIn('if (a == b) return;'), undefined);
+  });
+
+  test('recovers a variable named after a built-in identifier', () => {
+    // Regression: the left of the assignment proves this is a variable, but the
+    // guess-from-a-caret rules rejected `type` and the command refused to log it.
+    assert.strictEqual(
+      declaredNameIn('final type = response.contentType;'),
+      'type',
+    );
   });
 });
 
@@ -377,7 +411,7 @@ suite('closureBodyOpening', () => {
       "builder: (context) {\n      final label = 'x';\n      return Column();\n    }",
     );
 
-    assert.deepStrictEqual(opening, { lineOffset: 0, character: 19 });
+    assert.deepStrictEqual(opening, { lineOffset: 0 });
   });
 
   test('finds the body of a bare anonymous function', () => {
@@ -572,5 +606,15 @@ suite('bodyOpeningAfter', () => {
   test('gives up rather than scanning the whole file', () => {
     const lines = Array.from({ length: 100 }, () => '    // nothing here');
     assert.strictEqual(bodyOpeningAfter(lines, 0), undefined);
+  });
+
+  test('crosses the separators in a C-style for header', () => {
+    // Regression: only a `;` outside every bracket ends a statement. Treating the
+    // two inside a `for` header as terminators left a cursor on the loop variable
+    // with nowhere to insert, and the command refused.
+    assert.strictEqual(
+      bodyOpeningAfter(['  for (var i = 0; i < n; i += 1) {'], 0),
+      0,
+    );
   });
 });

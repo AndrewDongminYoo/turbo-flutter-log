@@ -16,21 +16,19 @@
 const LITERAL = /^(['"`]|[0-9])/;
 
 /**
- * Words that cannot stand alone as a value reference, so interpolating one produces code that does
- * not compile — `$final` being the case that surfaced this.
+ * Words Dart refuses as a variable name at all, so interpolating one can never compile — `$final`
+ * being the case that surfaced this.
  *
- * Dart's reserved words plus the limited reserved words that appear as declaration modifiers, taken
- * from the keyword table in the language documentation.
+ * Membership was decided by running `var <word> = 1; print('$<word>');` through `dart analyze`
+ * rather than read off the keyword table, because the table's two categories do not line up with
+ * this question.
  *
  * `this` is deliberately absent: it is a reserved word but also a perfectly good thing to log.
- * The contextual keywords — `hide`, `of`, `on`, `sealed`, `show`, `sync`, `when`, `yield` — are
- * absent too, because they are usable as identifiers and may well be real variable names.
+ * `await` is present although a *synchronous* function accepts it as a name, because the analyzer
+ * rejects it inside an `async` one and guessing wrong there breaks the file.
  */
-const NOT_A_VALUE = new Set([
-  'abstract',
-  'as',
+const RESERVED = new Set([
   'assert',
-  'async',
   'await',
   'break',
   'case',
@@ -38,55 +36,86 @@ const NOT_A_VALUE = new Set([
   'class',
   'const',
   'continue',
-  'covariant',
   'default',
   'do',
-  'dynamic',
   'else',
   'enum',
-  'export',
   'extends',
-  'extension',
-  'external',
-  'factory',
   'false',
   'final',
   'finally',
   'for',
-  'Function',
-  'get',
   'if',
-  'implements',
-  'import',
   'in',
-  'interface',
   'is',
-  'late',
-  'library',
-  'mixin',
   'new',
   'null',
-  'operator',
-  'part',
-  'required',
   'return',
-  'set',
-  'static',
   'super',
   'switch',
   'throw',
   'true',
   'try',
-  'type',
-  'typedef',
   'var',
   'void',
   'while',
 ]);
 
-/** True when `word` can be interpolated as a value. */
+/**
+ * Dart's built-in identifiers: legal variable names that nonetheless usually appear as modifiers.
+ *
+ * The distinction is *who chose the word*. Guessing from a caret, one of these is far more likely to
+ * be the `external` in a declaration than a variable — so the guess declines. Where the position
+ * already proves a variable, such as the left of an assignment or a selection the user made
+ * deliberately, `final type = response.contentType;` must stay loggable.
+ *
+ * The contextual keywords — `hide`, `of`, `on`, `sealed`, `show`, `sync`, `when`, `yield` — are
+ * absent from both sets: they read as ordinary names and may well be real variables.
+ */
+const BUILT_IN = new Set([
+  'abstract',
+  'as',
+  'async',
+  'covariant',
+  'dynamic',
+  'export',
+  'extension',
+  'external',
+  'factory',
+  'Function',
+  'get',
+  'implements',
+  'import',
+  'interface',
+  'late',
+  'library',
+  'mixin',
+  'operator',
+  'part',
+  'required',
+  'set',
+  'static',
+  'type',
+  'typedef',
+]);
+
+const IDENTIFIER = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+/**
+ * True when `word` is worth interpolating on the strength of the caret resting on it.
+ *
+ * Stricter than {@link isLoggableName}: this is a guess, so a built-in identifier is declined.
+ */
 export function isLoggableIdentifier(word: string): boolean {
-  return /^[A-Za-z_][A-Za-z0-9_]*$/.test(word) && !NOT_A_VALUE.has(word);
+  return IDENTIFIER.test(word) && !RESERVED.has(word) && !BUILT_IN.has(word);
+}
+
+/**
+ * True when `word` can be interpolated as a value, given that something else already established it
+ * is one — an assignment target, or a name the user selected.
+ */
+export function isLoggableName(word: string): boolean {
+  return IDENTIFIER.test(word) && !RESERVED.has(word);
 }
 
 /**
@@ -247,8 +276,8 @@ export function isLoggableExpression(text: string): boolean {
   if (trimmed.length === 0 || trimmed.includes('\n')) {
     return false;
   }
-  if (/^[A-Za-z_][A-Za-z0-9_]*$/.test(trimmed)) {
-    return isLoggableIdentifier(trimmed);
+  if (IDENTIFIER.test(trimmed)) {
+    return isLoggableName(trimmed);
   }
   // A dangling operator, separator or opening bracket means the selection cut a
   // token in half.
@@ -344,12 +373,10 @@ export function chooseExpression(chain: readonly string[]): string {
  */
 const NOT_A_PARAMETER_LIST = /\b(?:switch|if|while|do|assert)\s*$/;
 
-/** Where a closure body opens, as offsets from the start of the range it was found in. */
+/** Where a closure body opens, as an offset from the start of the range it was found in. */
 export interface BlockOpening {
   /** Lines from the start of the text to the one holding the `{`. */
   lineOffset: number;
-  /** Character offset of the `{` within that line. */
-  character: number;
 }
 
 /**
@@ -389,14 +416,9 @@ export function closureBodyOpening(
     return undefined;
   }
 
-  const index = at + parent.length + body[0].length - 1;
-  const before = grandparent.slice(0, index);
-  const lastBreak = before.lastIndexOf('\n');
+  const before = grandparent.slice(0, at + parent.length + body[0].length - 1);
 
-  return {
-    lineOffset: before.split('\n').length - 1,
-    character: index - lastBreak - 1,
-  };
+  return { lineOffset: before.split('\n').length - 1 };
 }
 
 /**
@@ -409,24 +431,36 @@ export function closureBodyOpening(
  * The scan gives up as soon as it sees a line that ends a statement or closes a block, so it only
  * ever crosses continuation lines of the signature it started in. Returning `undefined` means the
  * caller has nowhere safe to put a log and should insert nothing at all.
+ *
+ * Only a `;` outside every bracket ends a statement. A C-style `for` header carries two inside its
+ * parentheses, and treating those as terminators made a cursor on the loop variable resolve to
+ * nowhere at all.
  */
 export function bodyOpeningAfter(
   lines: readonly string[],
   from: number,
   limit = 24,
 ): number | undefined {
+  // The scan may start part-way through a signature, so depth can go negative;
+  // everything at or below zero counts as outside.
+  let depth = 0;
+
   for (let line = from; line < lines.length && line < from + limit; line += 1) {
     const text = lines[line];
 
     for (let index = 0; index < text.length; index += 1) {
-      if (text[index] === ';') {
+      const char = text[index];
+
+      if (char === '(' || char === '[') {
+        depth += 1;
+      } else if (char === ')' || char === ']') {
+        depth -= 1;
+      } else if (char === ';' && depth <= 0) {
         // A statement ended before any body opened: nowhere safe to insert.
         return undefined;
+      } else if (char === '{' && depth <= 0 && opensABody(text, index)) {
+        return line;
       }
-      if (text[index] !== '{' || !opensABody(text, index)) {
-        continue;
-      }
-      return line;
     }
   }
 
