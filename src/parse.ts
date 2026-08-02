@@ -5,7 +5,6 @@ import {
   type Quote,
   type TurboConfig,
 } from './config';
-import { escapeRegExp } from './marker';
 import { isLogLevel, levelFromDeveloperLog, type LogLevel } from './levels';
 
 /**
@@ -19,6 +18,13 @@ export interface ParsedLog {
   logFunction: LogFunction;
   logLevel?: LogLevel;
   quote: Quote;
+  /**
+   * The prefix an aliased `developer.log` was written with, absent for the other two functions.
+   *
+   * Re-emitting from the configured alias instead would rewrite `dev.log(…)` into
+   * `developer.log(…)` in a file that only imports `dev`, and the file would stop compiling.
+   */
+  developerLogAlias?: string;
   /** The Dart expression the log reports, taken from the payload segment. */
   expression: string;
 }
@@ -43,11 +49,16 @@ export function parseTurboLog(
   statement: string,
   config: TurboConfig,
 ): ParsedLog | undefined {
-  const alias = escapeRegExp(config.developerLogAlias);
-  // The message runs to the first *unescaped* closing quote. A greedy match
-  // would swallow `developer.log`'s trailing `name: '…'` argument along with it.
+  // The `developer.log` prefix is matched as *any* identifier, for the reason the
+  // detection pattern does: insertion adopts an alias already present in the file,
+  // so pinning this to the configured one made every `dev.log(…)` unparseable and
+  // the correct command skipped it silently.
+  //
+  // The message runs to the first *unescaped* closing quote, with `${…}` consumed
+  // whole so an interpolated `m['k']` does not end it early. A greedy match would
+  // swallow `developer.log`'s trailing `name: '…'` argument along with it.
   const match = new RegExp(
-    `^(print|debugPrint|${alias}\\.log)\\(\\s*(['"])((?:\\\\.|(?!\\2).)*)\\2(.*)\\);$`,
+    `^(print|debugPrint|[A-Za-z_$][A-Za-z0-9_$]*\\.log)\\(\\s*(['"])((?:\\\\.|\\$\\{[^}]*\\}|(?!\\2).)*)\\2(.*)\\);$`,
   ).exec(statement.trim());
 
   if (!match) {
@@ -81,7 +92,14 @@ export function parseTurboLog(
     return undefined;
   }
 
-  return { logFunction, logLevel: levelOf(segments, rest), quote, expression };
+  return {
+    logFunction,
+    logLevel: levelOf(segments, rest),
+    quote,
+    developerLogAlias:
+      logFunction === 'developer.log' ? callee.slice(0, -4) : undefined,
+    expression,
+  };
 }
 
 /**
