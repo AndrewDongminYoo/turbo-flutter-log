@@ -41,16 +41,24 @@ export function planBulkEdits(
 
     const isCommented = parts.comment.length > 0;
 
+    // Deleting takes the whole line, trailing comment included: the comment
+    // annotates the log, so it has nothing left to say once the log is gone.
     if (mode === 'delete') {
       edits.push({ line });
       continue;
     }
     if (mode === 'comment' && !isCommented) {
-      edits.push({ line, text: `${parts.indent}// ${parts.statement}` });
+      edits.push({
+        line,
+        text: `${parts.indent}// ${parts.statement}${parts.trailing}`,
+      });
       continue;
     }
     if (mode === 'uncomment' && isCommented) {
-      edits.push({ line, text: `${parts.indent}${parts.statement}` });
+      edits.push({
+        line,
+        text: `${parts.indent}${parts.statement}${parts.trailing}`,
+      });
     }
   }
 

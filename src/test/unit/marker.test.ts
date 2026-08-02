@@ -3,8 +3,10 @@ import * as assert from 'assert';
 import { LOG_FUNCTIONS, resolveConfig, type TurboConfig } from '../../config';
 import {
   escapeRegExp,
+  findExpressionLine,
   isTurboLog,
   linesInsideStrings,
+  matchTurboLog,
   turboLogPattern,
 } from '../../marker';
 import { buildLogStatement, type LogContext } from '../../statement';
@@ -124,11 +126,50 @@ suite('turboLogPattern', () => {
     assert.ok(isTurboLog(`  ${statement}`, config));
   });
 
-  test('matches a log carrying a trailing comment', () => {
+  test('matches a log carrying a trailing comment, and hands it back', () => {
     const config = resolveConfig({ logFunction: 'print' });
     const statement = buildLogStatement(config, CONTEXT);
 
     assert.ok(isTurboLog(`  ${statement} // keep an eye on this`, config));
+
+    // Regression: the comment matched but fell outside every capture group, so
+    // commenting or correcting the log rebuilt the line without it.
+    const parts = matchTurboLog(
+      `  ${statement} // keep an eye on this`,
+      config,
+    );
+    assert.strictEqual(parts?.trailing, ' // keep an eye on this');
+    assert.strictEqual(
+      `${parts?.indent}${parts?.comment}${parts?.statement}${parts?.trailing}`,
+      `  ${statement} // keep an eye on this`,
+    );
+  });
+
+  test('matches a log whose own message contains a semicolon', () => {
+    // Regression: excluding `;` from the statement body to keep a second
+    // statement off the line also excluded one inside the message, so such a log
+    // could be written but never commented, deleted or corrected.
+    const config = resolveConfig({ logFunction: 'print' });
+    const statement = buildLogStatement(config, {
+      ...CONTEXT,
+      expression: "m['a;b']",
+    });
+
+    assert.ok(statement.includes(';'), statement);
+    assert.ok(isTurboLog(statement, config), statement);
+  });
+
+  test('matches an interpolation carrying the enclosing quote', () => {
+    // `${m['k']}` inside a single-quoted message is valid Dart: the quotes are
+    // inside an interpolation block, so they do not close the literal.
+    const config = resolveConfig({ logFunction: 'print', quote: "'" });
+    const statement = buildLogStatement(config, {
+      ...CONTEXT,
+      expression: "m['k']",
+    });
+
+    assert.ok(isTurboLog(statement, config), statement);
+    assert.ok(!isTurboLog(`  ${statement} doSomething();`, config), statement);
   });
 
   test('treats a marker containing regex metacharacters literally', () => {
@@ -189,5 +230,63 @@ suite('linesInsideStrings', () => {
       linesInsideStrings(["final s = '''one line''';", 'final t = 1;']),
       [false, false],
     );
+  });
+
+  test('ignores the other delimiter inside a block', () => {
+    // Regression: counting ''' and """ as one token let a lone """ inside a '''
+    // block invert the state, after which every real line below the block was
+    // skipped as string content and no log in it could be found.
+    assert.deepStrictEqual(
+      linesInsideStrings(["final t = '''", 'a """ b', "''';", "print('x');"]),
+      [false, true, false, false],
+    );
+  });
+});
+
+suite('findExpressionLine', () => {
+  const config = resolveConfig({ logFunction: 'print' });
+
+  function logFor(expression: string): string {
+    return buildLogStatement(config, { ...CONTEXT, expression });
+  }
+
+  test('finds the statement the expression is declared in', () => {
+    const lines = ['final user = load();', logFor('user')];
+
+    assert.strictEqual(findExpressionLine(lines, 1, 'user', config), 0);
+  });
+
+  test('skips another log for the same expression', () => {
+    // Regression: two logs stacked for one variable made the second match the
+    // first one's line, so correcting it reported the log's line, not the code's.
+    const lines = ['final user = load();', logFor('user'), logFor('user')];
+
+    assert.strictEqual(findExpressionLine(lines, 2, 'user', config), 0);
+  });
+
+  test('skips a comment that mentions the expression', () => {
+    const lines = [
+      'final user = load();',
+      '  // user is nullable here',
+      logFor('user'),
+    ];
+
+    assert.strictEqual(findExpressionLine(lines, 2, 'user', config), 0);
+  });
+
+  test('does not match the expression inside a longer identifier', () => {
+    // `user` must not find `username`; with no real occurrence the answer is the
+    // fallback, the line directly above.
+    const lines = ['final username = 1;', 'noop();'];
+
+    assert.strictEqual(findExpressionLine(lines, 2, 'user', config), 1);
+  });
+
+  test('falls back to the line above when nothing matches', () => {
+    assert.strictEqual(
+      findExpressionLine(['a();', 'b();'], 1, 'user', config),
+      0,
+    );
+    assert.strictEqual(findExpressionLine([], 0, 'user', config), 0);
   });
 });

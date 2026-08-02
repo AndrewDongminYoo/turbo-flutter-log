@@ -113,6 +113,17 @@ suite('planBulkEdits', () => {
     assert.strictEqual(planBulkEdits(lines, config, 'delete').length, 3);
   });
 
+  test('keeps a trailing comment through comment and uncomment', () => {
+    // Regression: the comment matched but fell outside every capture group, so
+    // rebuilding the line silently deleted the user's note.
+    const config = resolveConfig({ logFunction: 'print' });
+    const line = `  ${buildLogStatement(config, CONTEXT)} // fires twice, why`;
+
+    const commented = apply([line], config, 'comment');
+    assert.ok(commented[0].endsWith(' // fires twice, why'), commented[0]);
+    assert.deepStrictEqual(apply(commented, config, 'uncomment'), [line]);
+  });
+
   test('touches nothing in a file with no turbo logs', () => {
     const config = resolveConfig({});
     const lines = ['void main() {', "  print('hello');", '}'];
