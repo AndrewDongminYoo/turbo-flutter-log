@@ -74,6 +74,10 @@ const CHAINS: Record<string, { chain: string[]; expected: string }> = {
     ],
     expected: 'user.profile',
   },
+  // Stops at the callee rather than widening to the call. Logging
+  // `compute(user.profile)` would invoke it a second time, and a log must not
+  // have side effects — the case that surfaced this was `prefs` widening to
+  // `await prefs.reload()`.
   'cursor on the callee of a binary expression': {
     chain: [
       'compute',
@@ -83,7 +87,7 @@ const CHAINS: Record<string, { chain: string[]; expected: string }> = {
       'final sum = compute(user.profile) + 1',
       'final sum = compute(user.profile) + 1;',
     ],
-    expected: 'compute(user.profile)',
+    expected: 'compute',
   },
 };
 
@@ -455,5 +459,51 @@ suite('isDeclaration', () => {
       chooseExpression(['BuildContext context', '(BuildContext context)']),
       '',
     );
+  });
+});
+
+suite('logs must not invoke anything', () => {
+  test('stops before a call when climbing a member chain', () => {
+    // Regression: selecting `prefs` in `await prefs.reload();` produced
+    // `${await prefs.reload()}`, which calls the method a second time.
+    assert.strictEqual(
+      chooseExpression([
+        'prefs',
+        'prefs.reload',
+        'prefs.reload()',
+        'await prefs.reload()',
+        'await prefs.reload();',
+      ]),
+      'prefs.reload',
+    );
+  });
+
+  test('never climbs into an await', () => {
+    assert.strictEqual(
+      chooseExpression(['value', 'await value', 'await value;']),
+      'value',
+    );
+  });
+
+  test('still climbs a plain member chain', () => {
+    assert.strictEqual(
+      chooseExpression(['user', 'user.profile', 'user.profile.name']),
+      'user.profile.name',
+    );
+  });
+});
+
+suite('declaredNameIn with member targets', () => {
+  test('keeps the whole assignment target', () => {
+    // Regression: `state.needsReload = false` yielded `needsReload`, a name
+    // that does not exist on its own.
+    assert.strictEqual(
+      declaredNameIn('state.needsReload = false;'),
+      'state.needsReload',
+    );
+  });
+
+  test('still returns a plain declared name', () => {
+    assert.strictEqual(declaredNameIn('final prefs = load();'), 'prefs');
   });
 });

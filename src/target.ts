@@ -122,10 +122,10 @@ export function isDeclarationModifier(word: string): boolean {
  * Returns `undefined` when the statement assigns to nothing.
  */
 export function declaredNameIn(statement: string): string | undefined {
-  const match = /([A-Za-z_][A-Za-z0-9_]*)\s*=(?!=)/.exec(statement);
+  const match = /([A-Za-z_][A-Za-z0-9_.]*)\s*=(?!=)/.exec(statement);
   const name = match?.[1];
 
-  return name !== undefined && isLoggableIdentifier(name) ? name : undefined;
+  return name !== undefined && isLoggableExpression(name) ? name : undefined;
 }
 
 /**
@@ -304,6 +304,16 @@ export function chooseExpression(chain: readonly string[]): string {
 
   for (const parent of chain.slice(1)) {
     if (parent.includes('\n') || hasTopLevelStop(parent)) {
+      break;
+    }
+
+    // Never climb into a call. `prefs` → `prefs.reload` → `prefs.reload()`
+    // would make the log invoke the method, and a log must not have side
+    // effects. `await` is excluded for the same reason.
+    const suffix = parent.startsWith(candidate)
+      ? parent.slice(candidate.length).trimStart()
+      : '';
+    if (suffix.startsWith('(') || /^await\b/.test(parent.trim())) {
       break;
     }
 

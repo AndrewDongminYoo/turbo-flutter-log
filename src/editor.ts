@@ -254,6 +254,7 @@ async function fromCursor(
   position: vscode.Position,
   chain: readonly string[],
   statement: string | undefined,
+  preferWord: boolean,
 ): Promise<string> {
   const line = document.lineAt(position.line).text;
   const wordRange = document.getWordRangeAtPosition(position);
@@ -282,7 +283,17 @@ async function fromCursor(
     return declared ?? '';
   }
 
-  if (declared !== undefined) {
+  // The analyzer confirmed this word is a value, and the user pointed at it.
+  // Widening past an explicit selection would log something they did not ask
+  // for — `state` becoming `state.needsReload`, or `prefs` becoming a call.
+  if (kind === 'value' && preferWord) {
+    return word;
+  }
+
+  // Only when the word itself is not a known value does the declaration's
+  // target apply; otherwise `state` in `state.needsReload = false` would be
+  // replaced by the assignment target.
+  if (kind !== 'value' && declared !== undefined) {
     return declared;
   }
 
@@ -391,7 +402,13 @@ export async function resolveTarget(
   const expression =
     !selection.isEmpty && !isSingleIdentifier && isLoggableExpression(selected)
       ? selected
-      : await fromCursor(document, position, chain, statement);
+      : await fromCursor(
+          document,
+          position,
+          chain,
+          statement,
+          !selection.isEmpty && isSingleIdentifier,
+        );
 
   if (expression.length === 0 || expression.includes('\n')) {
     return undefined;
