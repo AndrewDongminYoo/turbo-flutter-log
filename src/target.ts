@@ -301,6 +301,73 @@ export function chooseExpression(chain: readonly string[]): string {
 }
 
 /**
+ * Constructs whose parenthesised part is an expression evaluated *outside* the braces that follow.
+ *
+ * `switch` matters most: in `return switch (value) { … };` the braces hold case arms, not
+ * statements, so putting a log inside them does not compile. The others are excluded because their
+ * subject is visible after the whole statement anyway, which is the simpler place for it.
+ *
+ * `for` and `catch` are deliberately absent — they bind names that exist only inside the block, so
+ * a log for one of those names does belong there.
+ */
+const NOT_A_PARAMETER_LIST = /\b(?:switch|if|while|do|assert)\s*$/;
+
+/** Where a closure body opens, as offsets from the start of the range it was found in. */
+export interface BlockOpening {
+  /** Lines from the start of the text to the one holding the `{`. */
+  lineOffset: number;
+  /** Character offset of the `{` within that line. */
+  character: number;
+}
+
+/**
+ * Finds the body of the closure whose parameter list the cursor is inside, given the cursor's
+ * immediate parent range and its grandparent.
+ *
+ * A closure parameter has no statement of its own: for `builder: (context) { … }` the nearest
+ * ancestor ending in `;` is the *outer* call, so a log for `context` would land after that call and
+ * name something out of scope. The body is where it belongs.
+ *
+ * Recognised only for the anonymous-function shape — a parenthesised list directly followed by `{`,
+ * `async {`, or `=>` — and only when the text before the list is not a control keyword. Everything
+ * else, including collection literals and switch expressions, is left alone.
+ */
+export function closureBodyOpening(
+  parent: string | undefined,
+  grandparent: string | undefined,
+): BlockOpening | undefined {
+  if (parent === undefined || grandparent === undefined) {
+    return undefined;
+  }
+  if (!/^\([\s\S]*\)$/.test(parent.trim())) {
+    return undefined;
+  }
+
+  const at = grandparent.indexOf(parent);
+  if (at === -1) {
+    return undefined;
+  }
+  if (NOT_A_PARAMETER_LIST.test(grandparent.slice(0, at))) {
+    return undefined;
+  }
+
+  const after = grandparent.slice(at + parent.length);
+  const body = /^\s*(?:async\s*\*?\s*|sync\s*\*\s*)?\{/.exec(after);
+  if (!body) {
+    return undefined;
+  }
+
+  const index = at + parent.length + body[0].length - 1;
+  const before = grandparent.slice(0, index);
+  const lastBreak = before.lastIndexOf('\n');
+
+  return {
+    lineOffset: before.split('\n').length - 1,
+    character: index - lastBreak - 1,
+  };
+}
+
+/**
  * Picks the enclosing statement from the same chain, so the caller knows which line the log goes after.
  *
  * Multi-line statements count, and must: a statement such as

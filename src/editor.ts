@@ -15,6 +15,7 @@ import {
   assignmentIndex,
   chooseExpression,
   chooseStatementText,
+  closureBodyOpening,
   declaredNameIn,
   isDeclarationModifier,
   isLoggableExpression,
@@ -335,17 +336,37 @@ export async function resolveTarget(
   const statement = chooseStatementText(chain);
   const statementIndex =
     statement === undefined ? -1 : chain.indexOf(statement);
-  const insertAfterLine =
+  let insertAfterLine =
     statementIndex === -1
       ? position.line
       : nodes[statementIndex].range.end.line;
 
+  // When the cursor sits in a closure's parameter list, the statement found
+  // above is the enclosing call, outside the closure — and a log for a parameter
+  // placed there would name something out of scope. The closure's body is where
+  // it belongs.
+  for (let index = 1; index < Math.max(statementIndex, 2); index += 1) {
+    const opening = closureBodyOpening(chain[index], chain[index + 1]);
+    if (opening === undefined) {
+      continue;
+    }
+
+    const start = nodes[index + 1].range.start;
+    insertAfterLine = start.line + opening.lineOffset;
+    break;
+  }
+
   // A selection says what the user meant — but only if it is actually an
-  // expression. Selecting `final` out of `finalObj` is a partial token, and
-  // falling through to the cursor logic recovers `finalObj`.
+  // expression. Selecting `final` out of `finalObj` is a partial token.
+  //
+  // A selection that is a single identifier goes through the cursor path even
+  // though it looks valid, because only the analyzer can tell `dismissible` the
+  // named argument from `dismissible` the variable. A compound selection such as
+  // `a + b` has no single symbol to ask about, so it is taken at face value.
   const selected = document.getText(selection).trim();
+  const isSingleIdentifier = /^[A-Za-z_][A-Za-z0-9_]*$/.test(selected);
   const expression =
-    !selection.isEmpty && isLoggableExpression(selected)
+    !selection.isEmpty && !isSingleIdentifier && isLoggableExpression(selected)
       ? selected
       : await fromCursor(document, position, chain, statement);
 

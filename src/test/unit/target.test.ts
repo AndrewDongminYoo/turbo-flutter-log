@@ -4,6 +4,7 @@ import {
   assignmentIndex,
   chooseExpression,
   chooseStatementText,
+  closureBodyOpening,
   declaredNameIn,
   hasTopLevelStop,
   isLoggableExpression,
@@ -357,5 +358,68 @@ suite('isLoggableExpression', () => {
 
   test('rejects a multi-line selection', () => {
     assert.ok(!isLoggableExpression('a +\n  b'));
+  });
+});
+
+suite('closureBodyOpening', () => {
+  test('finds the body of a named closure argument', () => {
+    // Chain captured from `dart language-server` for a cursor on `context` in
+    // `builder: (context) {` — the parent is `(context)`, the grandparent the
+    // whole named argument.
+    const opening = closureBodyOpening(
+      '(context)',
+      "builder: (context) {\n      final label = 'x';\n      return Column();\n    }",
+    );
+
+    assert.deepStrictEqual(opening, { lineOffset: 0, character: 19 });
+  });
+
+  test('finds the body of a bare anonymous function', () => {
+    assert.ok(closureBodyOpening('(a, b)', '(a, b) {\n  return a;\n}'));
+    assert.ok(closureBodyOpening('()', '() async {\n  return 1;\n}'));
+    assert.ok(closureBodyOpening('()', '() sync* {\n  yield 1;\n}'));
+  });
+
+  test('ignores a switch expression, whose braces hold case arms', () => {
+    // Regression guard: inserting a statement between case arms does not compile.
+    assert.strictEqual(
+      closureBodyOpening(
+        '(value)',
+        'switch (value) {\n  1 => a,\n  _ => b,\n}',
+      ),
+      undefined,
+    );
+  });
+
+  test('ignores the other control constructs', () => {
+    for (const keyword of ['if', 'while', 'do', 'assert']) {
+      assert.strictEqual(
+        closureBodyOpening('(x)', `${keyword} (x) {\n  y();\n}`),
+        undefined,
+        keyword,
+      );
+    }
+  });
+
+  test('keeps for and catch, which bind names scoped to the block', () => {
+    assert.ok(
+      closureBodyOpening('(final e)', 'catch (final e) {\n  handle(e);\n}'),
+    );
+  });
+
+  test('ignores a collection literal', () => {
+    assert.strictEqual(
+      closureBodyOpening('(map)', 'read(map) ?? <String, dynamic>{}'),
+      undefined,
+    );
+  });
+
+  test('ignores anything that is not a parenthesised list', () => {
+    assert.strictEqual(
+      closureBodyOpening('context', 'builder: (context) {}'),
+      undefined,
+    );
+    assert.strictEqual(closureBodyOpening(undefined, 'x'), undefined);
+    assert.strictEqual(closureBodyOpening('(x)', undefined), undefined);
   });
 });
