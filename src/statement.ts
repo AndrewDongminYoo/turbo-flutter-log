@@ -98,3 +98,22 @@ export function buildLogStatement(
 
   return `${config.developerLogAlias}.log(${args.join(', ')});`;
 }
+
+/**
+ * Wraps a statement into the text inserted at the start of the following line, carrying the surrounding indentation and any requested blank lines.
+ */
+export function renderStatementBlock(
+  statement: string,
+  indent: string,
+  config: TurboConfig,
+): string {
+  const before = config.insertEmptyLineBefore ? '\n' : '';
+  const after = config.insertEmptyLineAfter ? '\n' : '';
+
+  return `${before}${indent}${statement}\n${after}`;
+}
+
+/** The leading whitespace of a line, so an inserted log lines up with the code it follows. */
+export function indentationOf(line: string): string {
+  return /^[ \t]*/.exec(line)?.[0] ?? '';
+}

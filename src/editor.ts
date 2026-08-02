@@ -1,7 +1,72 @@
 import * as vscode from 'vscode';
 
+import {
+  hasUsableMarker,
+  resolveConfig,
+  type RawConfig,
+  type TurboConfig,
+} from './config';
 import { findEnclosingChain, type SymbolNode } from './symbols';
 import { chooseExpression, chooseStatementText } from './target';
+
+const SECTION = 'turbo-flutter-log';
+
+const KEYS: readonly (keyof TurboConfig)[] = [
+  'logFunction',
+  'logLevel',
+  'marker',
+  'delimiter',
+  'quote',
+  'includeFileName',
+  'includeLineNumber',
+  'includeEnclosingClass',
+  'includeEnclosingFunction',
+  'insertEmptyLineBefore',
+  'insertEmptyLineAfter',
+  'developerLogAlias',
+];
+
+/**
+ * Reads the settings block without applying VS Code's own defaults, so `resolveConfig` can tell an unset value from an explicitly emptied one.
+ */
+export function readTurboConfig(
+  scope?: vscode.ConfigurationScope,
+): TurboConfig {
+  const section = vscode.workspace.getConfiguration(SECTION, scope);
+  const raw: RawConfig = {};
+  for (const key of KEYS) {
+    raw[key] = section.get(key);
+  }
+  return resolveConfig(raw);
+}
+
+/**
+ * Resolves the editor a command may act on, or reports why it may not.
+ *
+ * Both refusals are the point rather than defensive noise: without the language check the commands rewrite any open file, and without the marker check they would match every log in it.
+ */
+export function requireDartEditor(
+  config: TurboConfig,
+): vscode.TextEditor | undefined {
+  const editor = vscode.window.activeTextEditor;
+  if (!editor) {
+    void vscode.window.showErrorMessage('turbo-flutter-log: no active editor.');
+    return undefined;
+  }
+  if (editor.document.languageId !== 'dart') {
+    void vscode.window.showErrorMessage(
+      'turbo-flutter-log: this command only runs on Dart files.',
+    );
+    return undefined;
+  }
+  if (!hasUsableMarker(config)) {
+    void vscode.window.showErrorMessage(
+      `turbo-flutter-log: the "${SECTION}.marker" setting is empty. An empty marker would match every log in the file, so every command refuses to run.`,
+    );
+    return undefined;
+  }
+  return editor;
+}
 
 /**
  * Thin adapters over VS Code's built-in provider commands, which proxy to whatever language server is active — here, the one the Dart extension already runs.

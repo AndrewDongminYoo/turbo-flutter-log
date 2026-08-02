@@ -30,10 +30,38 @@ export function turboLogPattern(config: TurboConfig): RegExp {
   );
 }
 
+export interface TurboLogParts {
+  /** Leading whitespace, preserved so commenting does not reindent. */
+  indent: string;
+  /** The `//` and any following space, present only on a commented log. */
+  comment: string;
+  /** The statement itself, from the callee through the trailing semicolon. */
+  statement: string;
+}
+
+/**
+ * Splits a single line into its turbo-log parts, or returns `undefined` when the line is not one.
+ *
+ * Keeping the split here means the bulk commands never construct a pattern of their own, which is what let three of them drift into never matching anything.
+ */
+export function matchTurboLog(
+  line: string,
+  config: TurboConfig,
+): TurboLogParts | undefined {
+  const match = turboLogPattern(config).exec(line);
+  if (!match) {
+    return undefined;
+  }
+  return {
+    indent: match[1] ?? '',
+    comment: match[2] ?? '',
+    statement: match[3] ?? '',
+  };
+}
+
 /**
  * True when the line is a turbo log, commented or not.
- * Convenience for single-line checks; bulk commands use {@link turboLogPattern} directly.
  */
 export function isTurboLog(line: string, config: TurboConfig): boolean {
-  return turboLogPattern(config).test(line);
+  return matchTurboLog(line, config) !== undefined;
 }
