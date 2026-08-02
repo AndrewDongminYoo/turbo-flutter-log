@@ -33,6 +33,16 @@ export function developerLogLevel(level: LogLevel): number {
 }
 
 /**
+ * Recovers the configured level from a value already written into a log.
+ *
+ * Used by the correct command, which re-emits an existing statement and must keep the severity it
+ * was written with rather than imposing the current setting.
+ */
+export function levelFromDeveloperLog(value: number): LogLevel | undefined {
+  return LOG_LEVELS.find((level) => DEVELOPER_LOG_LEVELS[level] === value);
+}
+
+/**
  * Returns true when `value` is one of the levels the extension accepts.
  * Used to fall back to the default rather than trusting an arbitrary settings string.
  */

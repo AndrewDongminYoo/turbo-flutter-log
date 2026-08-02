@@ -1,6 +1,7 @@
 import * as vscode from 'vscode';
 
 import { runBulkCommand } from './commands/bulk';
+import { correctAllLogMessages } from './commands/correct';
 import { displayLogMessage } from './commands/insert';
 
 /**
@@ -24,6 +25,10 @@ export function activate(context: vscode.ExtensionContext): void {
     vscode.commands.registerCommand(
       'turbo-flutter-log.deleteAllLogMessages',
       () => runBulkCommand('delete'),
+    ),
+    vscode.commands.registerCommand(
+      'turbo-flutter-log.correctAllLogMessages',
+      correctAllLogMessages,
     ),
   );
 }

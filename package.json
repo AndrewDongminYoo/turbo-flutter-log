@@ -58,12 +58,12 @@
         },
         "turbo-flutter-log.marker": {
           "type": "string",
-          "default": "🎯",
+          "default": "\ud83c\udfaf",
           "markdownDescription": "Identifies logs inserted by this extension, so the comment, uncomment and delete commands never touch a hand-written log. Must not be empty and must not contain `'`, `\"`, `\\` or `$`; an invalid value falls back to the default. Changing it orphans logs already inserted under the old marker."
         },
         "turbo-flutter-log.delimiter": {
           "type": "string",
-          "default": " · ",
+          "default": " \u00b7 ",
           "description": "Separator between message segments."
         },
         "turbo-flutter-log.quote": {
@@ -133,6 +133,11 @@
         "command": "turbo-flutter-log.deleteAllLogMessages",
         "key": "alt+shift+d",
         "when": "editorTextFocus && editorLangId == dart"
+      },
+      {
+        "command": "turbo-flutter-log.correctAllLogMessages",
+        "key": "alt+shift+x",
+        "when": "editorTextFocus && editorLangId == dart"
       }
     ],
     "menus": {
@@ -151,6 +156,10 @@
         },
         {
           "command": "turbo-flutter-log.deleteAllLogMessages",
+          "when": "editorLangId == dart"
+        },
+        {
+          "command": "turbo-flutter-log.correctAllLogMessages",
           "when": "editorLangId == dart"
         }
       ]
@@ -171,6 +180,10 @@
       {
         "command": "turbo-flutter-log.deleteAllLogMessages",
         "title": "Turbo Flutter Log: Delete All Log Messages"
+      },
+      {
+        "command": "turbo-flutter-log.correctAllLogMessages",
+        "title": "Turbo Flutter Log: Correct All Log Messages"
       }
     ]
   },
