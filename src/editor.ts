@@ -1,3 +1,5 @@
+import { TextDecoder } from 'node:util';
+
 import * as vscode from 'vscode';
 
 import {
