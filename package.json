@@ -226,6 +226,7 @@
     "test:unit": "npm run compile-tests && mocha --ui tdd \"out/test/unit/**/*.test.js\"",
     "test:all": "npm run test:unit && npm test"
   },
+  "packageManager": "pnpm@11.15.1",
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "~20.19.43",
