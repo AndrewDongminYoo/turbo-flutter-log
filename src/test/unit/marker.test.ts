@@ -172,6 +172,22 @@ suite('turboLogPattern', () => {
     assert.ok(!isTurboLog(`  ${statement} doSomething();`, config), statement);
   });
 
+  test('does not backtrack exponentially on a run of escapes that never closes', () => {
+    // The message-literal alternation lets one branch consume `\\`-escapes and
+    // another consume single characters. If both could take a backslash, a line
+    // that never satisfies the closing quote forces the engine to try every
+    // partition of the run — 2^n paths. This once ran for tens of seconds.
+    const config = resolveConfig({ logFunction: 'print' });
+    const pathological = `print('${config.marker}${'\\a'.repeat(40)} no close`;
+
+    const start = Date.now();
+    assert.ok(!isTurboLog(pathological, config));
+    assert.ok(
+      Date.now() - start < 1000,
+      'match completed without backtracking',
+    );
+  });
+
   test('matches a line left with a carriage return by a CRLF file', () => {
     // Every caller splits the document on `\n`, so on a CRLF file each line
     // arrives with a trailing `\r`. Without tolerating it the bulk commands

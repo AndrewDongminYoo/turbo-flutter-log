@@ -44,9 +44,11 @@ export function escapeRegExp(text: string): string {
 export function turboLogPattern(config: TurboConfig): RegExp {
   const marker = escapeRegExp(config.marker);
   const callee = `(?:print|debugPrint|[A-Za-z_$][A-Za-z0-9_$]*\\.log)`;
-  // `(?!\$\{)` keeps the alternation unambiguous: without it `${` could be taken
-  // by either branch and a failing match backtracks exponentially.
-  const literalBody = `(?:\\\\.|\\$\\{[^}]*\\}|(?!\\4)(?!\\$\\{).)*`;
+  // The two lookaheads keep the alternation unambiguous: the last branch refuses
+  // any character another branch already owns — `${` (the interpolation branch)
+  // and `\` (the escape branch). Without them a failing match backtracks
+  // exponentially, since either branch could consume the same character.
+  const literalBody = `(?:\\\\.|\\$\\{[^}]*\\}|(?!\\4)(?!\\$\\{)(?!\\\\).)*`;
 
   return new RegExp(
     `^([ \\t]*)(//[ \\t]?)?(${callee}\\(\\s*(['"])${marker}${literalBody}\\4[^;]*\\);)([ \\t]*(?://.*)?)\\r?$`,
