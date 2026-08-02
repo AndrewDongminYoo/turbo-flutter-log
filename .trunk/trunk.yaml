@@ -20,10 +20,7 @@ lint:
     - grype@0.110.0
     - oxipng@9.1.5
     - checkov@3.3.8
-    # Pinned to the workspace's eslint major (package.json devDeps: ^9.16.0).
-    # eslint 10 crashes on this repo's @typescript-eslint 8.x parser
-    # (scopeManager.addGlobals is not a function). Bump both together.
-    - eslint@9.39.5
+    - eslint@10.8.0
     - git-diff-check
     - markdownlint@0.49.1
     - osv-scanner@2.2.4
