@@ -32,6 +32,10 @@ export function escapeRegExp(text: string): string {
  * ponytail: `[^}]*` means an interpolation containing `}` still ends the scan early; a string-mode
  * scanner would be the upgrade if one ever appears.
  *
+ * A trailing `\r` is tolerated but never captured: every caller splits the document on `\n`, so on a
+ * CRLF file each line arrives with one, and the edits are applied to ranges that exclude the line
+ * break anyway. Without this the bulk commands found nothing at all in such a file.
+ *
  * Capture groups: 1 leading indentation, 2 the `//` of a commented log if present, 3 the statement
  * itself, 4 the quote that opened the message, 5 anything after the statement — trailing whitespace
  * and a trailing comment, which the commands re-append so rewriting a log does not delete it.
@@ -40,10 +44,12 @@ export function escapeRegExp(text: string): string {
 export function turboLogPattern(config: TurboConfig): RegExp {
   const marker = escapeRegExp(config.marker);
   const callee = `(?:print|debugPrint|[A-Za-z_$][A-Za-z0-9_$]*\\.log)`;
-  const literalBody = `(?:\\\\.|\\$\\{[^}]*\\}|(?!\\4).)*`;
+  // `(?!\$\{)` keeps the alternation unambiguous: without it `${` could be taken
+  // by either branch and a failing match backtracks exponentially.
+  const literalBody = `(?:\\\\.|\\$\\{[^}]*\\}|(?!\\4)(?!\\$\\{).)*`;
 
   return new RegExp(
-    `^([ \\t]*)(//[ \\t]?)?(${callee}\\(\\s*(['"])${marker}${literalBody}\\4[^;]*\\);)([ \\t]*(?://.*)?)$`,
+    `^([ \\t]*)(//[ \\t]?)?(${callee}\\(\\s*(['"])${marker}${literalBody}\\4[^;]*\\);)([ \\t]*(?://.*)?)\\r?$`,
     'gm',
   );
 }

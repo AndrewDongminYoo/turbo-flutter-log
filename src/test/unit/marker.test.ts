@@ -172,6 +172,18 @@ suite('turboLogPattern', () => {
     assert.ok(!isTurboLog(`  ${statement} doSomething();`, config), statement);
   });
 
+  test('matches a line left with a carriage return by a CRLF file', () => {
+    // Every caller splits the document on `\n`, so on a CRLF file each line
+    // arrives with a trailing `\r`. Without tolerating it the bulk commands
+    // reported a Windows file as holding no logs at all.
+    const config = resolveConfig({ logFunction: 'print' });
+    const statement = buildLogStatement(config, CONTEXT);
+
+    assert.ok(isTurboLog(`  ${statement}\r`, config), statement);
+    // The `\r` is the line break, not part of the log, so it is never captured.
+    assert.strictEqual(matchTurboLog(`  ${statement}\r`, config)?.trailing, '');
+  });
+
   test('treats a marker containing regex metacharacters literally', () => {
     const config = resolveConfig({ marker: '[LOG]', logFunction: 'print' });
     assert.strictEqual(config.marker, '[LOG]');
