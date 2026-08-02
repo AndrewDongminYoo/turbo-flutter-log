@@ -6,8 +6,10 @@ on:
     tags:
       - v*
 
+# The job checks out, verifies the tag and publishes to the Marketplace. It never
+# writes to the repository, and it is the one job holding the Marketplace PAT.
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   publish:
@@ -40,7 +42,10 @@ jobs:
       - name: Extension host tests
         run: xvfb-run -a npm test
 
+      # `vsce` is a devDependency so `npm ci` installs the version the lockfile
+      # pins, with its integrity hash. `npx --yes @vscode/vsce` would instead run
+      # whatever is latest on npm at tag-push time, in the one job holding the PAT.
       - name: Publish to the Marketplace
-        run: npx --yes @vscode/vsce publish --pat "$VSCE_PAT"
+        run: npx vsce publish --pat "$VSCE_PAT"
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
