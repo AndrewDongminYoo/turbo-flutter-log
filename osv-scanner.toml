@@ -1,0 +1,7 @@
+[[IgnoredVulns]]
+id = "GHSA-5c6j-r48x-rmvq"
+reason = "serialize-javascript 6.0.2 is a devDependency only (@vscode/test-cli -> mocha). Not reachable from the published extension, which ships an esbuild bundle of src/ (`npm audit --omit=dev` reports 0). mocha pins ^6.0.2 and has no fixed release; drop this entry once mocha ships serialize-javascript >= 7.0.5."
+
+[[IgnoredVulns]]
+id = "GHSA-qj8w-gfj5-8c6v"
+reason = "Same devDependency chain as GHSA-5c6j-r48x-rmvq: serialize-javascript via @vscode/test-cli -> mocha, never bundled into the published extension."
