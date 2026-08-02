@@ -8,6 +8,7 @@ import {
   type RawConfig,
   type TurboConfig,
 } from './config';
+import { classifyHover } from './hover';
 import { findEnclosingChain, type SymbolNode } from './symbols';
 import { DEFAULT_PAGE_WIDTH, parsePageWidth } from './width';
 import {
@@ -179,6 +180,30 @@ export async function readPageWidth(
   return DEFAULT_PAGE_WIDTH;
 }
 
+/**
+ * Flattens a hover response into markdown, or `undefined` when nothing answered.
+ *
+ * `undefined` and empty are not the same thing to the caller: the analyzer returns no hover for a
+ * keyword, which is itself an answer, while a missing provider means fall back.
+ */
+async function readHover(
+  document: vscode.TextDocument,
+  position: vscode.Position,
+): Promise<string | undefined> {
+  const hovers = await vscode.commands.executeCommand<
+    vscode.Hover[] | undefined
+  >('vscode.executeHoverProvider', document.uri, position);
+
+  if (hovers === undefined) {
+    return undefined;
+  }
+
+  return hovers
+    .flatMap((hover) => hover.contents)
+    .map((content) => (typeof content === 'string' ? content : content.value))
+    .join('\n');
+}
+
 export async function resolveEnclosingSymbols(
   document: vscode.TextDocument,
   line: number,
@@ -213,24 +238,41 @@ export async function resolveEnclosingSymbols(
  * When none of those produce a value the answer is nothing, and the command says so rather than
  * emitting a guess: `$final` and `${dismissible: false,}` do not compile.
  */
-function fromCursor(
+async function fromCursor(
   document: vscode.TextDocument,
   position: vscode.Position,
   chain: readonly string[],
   statement: string | undefined,
-): string {
+): Promise<string> {
   const line = document.lineAt(position.line).text;
-
-  // Left of the assignment is the declaration's prefix — modifiers, a type,
-  // generic arguments — and none of it is a value. The variable being assigned
-  // is what the user meant. This runs before the chain because the chain would
-  // happily hand back the type name.
+  const wordRange = document.getWordRangeAtPosition(position);
+  const word = wordRange ? document.getText(wordRange) : '';
   const assignment = assignmentIndex(line);
-  if (assignment >= 0 && position.character <= assignment) {
-    const declared = declaredNameIn(line);
-    if (declared) {
-      return declared;
-    }
+
+  // Left of a top-level assignment is the declaration's prefix — modifiers, a
+  // type, generic arguments — so the variable being assigned is what was meant,
+  // whatever the cursor happens to rest on.
+  const declared =
+    assignment >= 0 && position.character <= assignment
+      ? declaredNameIn(line)
+      : undefined;
+
+  // Ask the analyzer what this is, rather than inferring it from text. An empty
+  // chain means no language server answered at all, so there is nothing to ask.
+  const kind =
+    chain.length === 0
+      ? 'unknown'
+      : classifyHover(await readHover(document, position), word);
+
+  if (kind !== 'value' && kind !== 'unknown') {
+    // A keyword, a type, or a named argument's name. The declared variable is
+    // the only thing nearby that is a value; without one, the honest answer is
+    // nothing.
+    return declared ?? '';
+  }
+
+  if (declared !== undefined) {
+    return declared;
   }
 
   const fromChain = chooseExpression(chain);
@@ -238,8 +280,12 @@ function fromCursor(
     return fromChain;
   }
 
-  const wordRange = document.getWordRangeAtPosition(position);
-  const word = wordRange ? document.getText(wordRange) : '';
+  if (kind === 'value') {
+    return word;
+  }
+
+  // No analyzer answer to go on. The text-based rules below are the fallback
+  // for the window while the server is starting, or when Dart tooling is absent.
 
   // A word followed by a colon is the *name* in a name/value pair — a named
   // argument, a map key, a label — not a value that can be interpolated.
@@ -255,8 +301,6 @@ function fromCursor(
     return declaredNameIn(statement ?? line) ?? '';
   }
 
-  // Nothing here is a value. Refusing is the right answer: emitting a guess
-  // produces code that does not compile.
   return '';
 }
 
@@ -303,7 +347,7 @@ export async function resolveTarget(
   const expression =
     !selection.isEmpty && isLoggableExpression(selected)
       ? selected
-      : fromCursor(document, position, chain, statement);
+      : await fromCursor(document, position, chain, statement);
 
   if (expression.length === 0 || expression.includes('\n')) {
     return undefined;
