@@ -176,16 +176,16 @@ suite('turboLogPattern', () => {
     // The message-literal alternation lets one branch consume `\\`-escapes and
     // another consume single characters. If both could take a backslash, a line
     // that never satisfies the closing quote forces the engine to try every
-    // partition of the run — 2^n paths. This once ran for tens of seconds.
+    // partition of the run — 2^n paths. The fixed pattern returns in well under a
+    // millisecond; the count is kept low enough that a regression still returns
+    // rather than blocking the suite — the pre-fix pattern measured 3.8s at this
+    // count on the machine that wrote the test, against the 300ms bound.
     const config = resolveConfig({ logFunction: 'print' });
-    const pathological = `print('${config.marker}${'\\a'.repeat(40)} no close`;
+    const pathological = `print('${config.marker}${'\\a'.repeat(24)} no close`;
 
     const start = Date.now();
     assert.ok(!isTurboLog(pathological, config));
-    assert.ok(
-      Date.now() - start < 1000,
-      'match completed without backtracking',
-    );
+    assert.ok(Date.now() - start < 300, 'match completed without backtracking');
   });
 
   test('matches a line left with a carriage return by a CRLF file', () => {
