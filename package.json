@@ -18,8 +18,23 @@
   "contributes": {
     "configuration": {
       "type": "object",
-      "title": "Turbo Flutter Log Configuration",
+      "title": "Turbo Flutter Log",
       "properties": {
+        "turbo-flutter-log.logFunction": {
+          "type": "string",
+          "enum": [
+            "print",
+            "debugPrint",
+            "developer.log"
+          ],
+          "enumDescriptions": [
+            "dart:core print(). Always printed, including in release builds.",
+            "Flutter's debugPrint(). Throttled so long output is not dropped by the platform.",
+            "dart:developer log(). Carries the enclosing symbol as name: and the level as level:, and adds its import automatically."
+          ],
+          "default": "debugPrint",
+          "description": "Which Dart logging call to insert."
+        },
         "turbo-flutter-log.logLevel": {
           "type": "string",
           "enum": [
@@ -30,15 +45,115 @@
             "error",
             "fatal"
           ],
+          "enumDescriptions": [
+            "package:logging FINEST (300)",
+            "package:logging FINE (500)",
+            "package:logging INFO (800)",
+            "package:logging WARNING (900)",
+            "package:logging SEVERE (1000)",
+            "package:logging SHOUT (1200)"
+          ],
           "default": "debug",
-          "description": "Select the log level"
+          "description": "Severity of inserted logs. Written into the message, and passed as level: when using developer.log."
         },
-        "turbo-flutter-log.logFunction": {
+        "turbo-flutter-log.marker": {
           "type": "string",
-          "default": "print",
-          "description": "Specify a log function. Default is print"
+          "default": "🎯",
+          "markdownDescription": "Identifies logs inserted by this extension, so the comment, uncomment and delete commands never touch a hand-written log. Must not be empty and must not contain `'`, `\"`, `\\` or `$`; an invalid value falls back to the default. Changing it orphans logs already inserted under the old marker."
+        },
+        "turbo-flutter-log.delimiter": {
+          "type": "string",
+          "default": " · ",
+          "description": "Separator between message segments."
+        },
+        "turbo-flutter-log.quote": {
+          "type": "string",
+          "enum": [
+            "'",
+            "\""
+          ],
+          "default": "'",
+          "description": "Quote style for the message literal."
+        },
+        "turbo-flutter-log.includeFileName": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the file name in the message."
+        },
+        "turbo-flutter-log.includeLineNumber": {
+          "type": "boolean",
+          "default": true,
+          "description": "Append the line number to the file name. Ignored when the file name is not included."
+        },
+        "turbo-flutter-log.includeEnclosingClass": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the enclosing class name. Requires the Dart extension; the segment is dropped when no symbol provider answers."
+        },
+        "turbo-flutter-log.includeEnclosingFunction": {
+          "type": "boolean",
+          "default": true,
+          "description": "Include the enclosing function or method name. Requires the Dart extension; the segment is dropped when no symbol provider answers."
+        },
+        "turbo-flutter-log.insertEmptyLineBefore": {
+          "type": "boolean",
+          "default": false,
+          "description": "Insert a blank line before the log statement."
+        },
+        "turbo-flutter-log.insertEmptyLineAfter": {
+          "type": "boolean",
+          "default": false,
+          "description": "Insert a blank line after the log statement."
+        },
+        "turbo-flutter-log.developerLogAlias": {
+          "type": "string",
+          "default": "developer",
+          "markdownDescription": "Import prefix used for `dart:developer`. An alias already present in the file wins over this setting. Must be a Dart identifier; an invalid value falls back to the default."
         }
       }
+    },
+    "keybindings": [
+      {
+        "command": "turbo-flutter-log.displayLogMessage",
+        "key": "ctrl+alt+l",
+        "mac": "cmd+alt+l",
+        "when": "editorTextFocus && editorLangId == dart"
+      },
+      {
+        "command": "turbo-flutter-log.commentAllLogMessages",
+        "key": "alt+shift+c",
+        "when": "editorTextFocus && editorLangId == dart"
+      },
+      {
+        "command": "turbo-flutter-log.uncommentAllLogMessages",
+        "key": "alt+shift+u",
+        "when": "editorTextFocus && editorLangId == dart"
+      },
+      {
+        "command": "turbo-flutter-log.deleteAllLogMessages",
+        "key": "alt+shift+d",
+        "when": "editorTextFocus && editorLangId == dart"
+      }
+    ],
+    "menus": {
+      "commandPalette": [
+        {
+          "command": "turbo-flutter-log.displayLogMessage",
+          "when": "editorLangId == dart"
+        },
+        {
+          "command": "turbo-flutter-log.commentAllLogMessages",
+          "when": "editorLangId == dart"
+        },
+        {
+          "command": "turbo-flutter-log.uncommentAllLogMessages",
+          "when": "editorLangId == dart"
+        },
+        {
+          "command": "turbo-flutter-log.deleteAllLogMessages",
+          "when": "editorLangId == dart"
+        }
+      ]
     },
     "commands": [
       {
