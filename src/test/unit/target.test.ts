@@ -2,6 +2,7 @@ import * as assert from 'assert';
 
 import {
   assignmentIndex,
+  bodyOpeningAfter,
   chooseExpression,
   chooseStatementText,
   closureBodyOpening,
@@ -505,5 +506,71 @@ suite('declaredNameIn with member targets', () => {
 
   test('still returns a plain declared name', () => {
     assert.strictEqual(declaredNameIn('final prefs = load();'), 'prefs');
+  });
+});
+
+suite('bodyOpeningAfter', () => {
+  // The exact shape that broke a file: a log went into the parameter list.
+  const SIGNATURE = [
+    '  @override',
+    '  Future<void> recordError(',
+    '    Object error,',
+    '    StackTrace? stack, {',
+    '    String? reason,',
+    '    bool fatal = false,',
+    '    Map<String, Object?> context = const {},',
+    '  }) async {',
+    '    if (!isEnabled) return;',
+    '  }',
+  ];
+
+  test('finds the body from a cursor on a named parameter', () => {
+    assert.strictEqual(bodyOpeningAfter(SIGNATURE, 6), 7);
+  });
+
+  test('skips the brace that opens the named parameter group', () => {
+    // Line 3 ends with `{`, but it follows a comma: it groups parameters.
+    assert.strictEqual(bodyOpeningAfter(SIGNATURE, 3), 7);
+  });
+
+  test('skips a collection literal in a default value', () => {
+    assert.strictEqual(
+      bodyOpeningAfter(
+        ['  Map<String, Object?> c = const {},', '  }) async {'],
+        0,
+      ),
+      1,
+    );
+  });
+
+  test('accepts a block opened on the cursor line itself', () => {
+    assert.strictEqual(
+      bodyOpeningAfter(['    if (state.needsReload) {'], 0),
+      0,
+    );
+  });
+
+  test('accepts an else, try and finally block', () => {
+    assert.strictEqual(bodyOpeningAfter(['  } else {'], 0), 0);
+    assert.strictEqual(bodyOpeningAfter(['  try {'], 0), 0);
+  });
+
+  test('gives up when a statement ends before any body opens', () => {
+    assert.strictEqual(
+      bodyOpeningAfter(['    final x = 1;', '    void f() {'], 0),
+      undefined,
+    );
+  });
+
+  test('gives up on an expression body, which cannot hold a statement', () => {
+    assert.strictEqual(
+      bodyOpeningAfter(['  Future<T?> fetch<T>(String k) async => null;'], 0),
+      undefined,
+    );
+  });
+
+  test('gives up rather than scanning the whole file', () => {
+    const lines = Array.from({ length: 100 }, () => '    // nothing here');
+    assert.strictEqual(bodyOpeningAfter(lines, 0), undefined);
   });
 });

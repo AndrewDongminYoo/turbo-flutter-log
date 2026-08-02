@@ -400,6 +400,65 @@ export function closureBodyOpening(
 }
 
 /**
+ * Finds the line that opens the body the cursor's declaration belongs to, scanning downwards.
+ *
+ * Needed when nothing in the range chain ends a statement, which happens when the cursor is in a
+ * signature. A parameter list has no statement of its own, and inserting after the cursor's line
+ * puts a statement *inside the parameter list* — the file stops compiling.
+ *
+ * The scan gives up as soon as it sees a line that ends a statement or closes a block, so it only
+ * ever crosses continuation lines of the signature it started in. Returning `undefined` means the
+ * caller has nowhere safe to put a log and should insert nothing at all.
+ */
+export function bodyOpeningAfter(
+  lines: readonly string[],
+  from: number,
+  limit = 24,
+): number | undefined {
+  for (let line = from; line < lines.length && line < from + limit; line += 1) {
+    const text = lines[line];
+
+    for (let index = 0; index < text.length; index += 1) {
+      if (text[index] === ';') {
+        // A statement ended before any body opened: nowhere safe to insert.
+        return undefined;
+      }
+      if (text[index] !== '{' || !opensABody(text, index)) {
+        continue;
+      }
+      return line;
+    }
+  }
+
+  return undefined;
+}
+
+/**
+ * Distinguishes the brace that opens a body from the two that do not.
+ *
+ * A signature can hold all three within a few lines:
+ *
+ * ```dart
+ * Future<void> recordError(
+ *   StackTrace? stack, {                      // named parameter group
+ *   Map<String, Object?> context = const {},  // map literal
+ * }) async {                                  // the body
+ * ```
+ *
+ * What separates them is the token in front. A body follows the closing `)` of its parameter list,
+ * or an asynchrony modifier, or a block keyword. A parameter group follows `,` or `(`, and a
+ * collection literal follows `=`, `const`, or a type argument list.
+ */
+function opensABody(text: string, index: number): boolean {
+  const before = text.slice(0, index).trimEnd();
+
+  return (
+    before.endsWith(')') ||
+    /\b(?:async\s*\*?|sync\s*\*|else|try|finally|do)$/.test(before)
+  );
+}
+
+/**
  * Picks the enclosing statement from the same chain, so the caller knows which line the log goes after.
  *
  * Multi-line statements count, and must: a statement such as

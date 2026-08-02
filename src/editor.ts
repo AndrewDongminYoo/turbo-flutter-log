@@ -14,6 +14,7 @@ import { DEFAULT_PAGE_WIDTH, parsePageWidth } from './width';
 import {
   assignmentIndex,
   chooseExpression,
+  bodyOpeningAfter,
   chooseStatementText,
   closureBodyOpening,
   declaredNameIn,
@@ -357,21 +358,33 @@ export async function resolveTarget(
   const statement = chooseStatementText(chain);
   const statementIndex =
     statement === undefined ? -1 : chain.indexOf(statement);
+  // With no statement to attach to, the cursor is in a signature or another
+  // place a statement cannot go. Inserting after the cursor's line there puts a
+  // statement inside a parameter list and breaks the file, so the body opening
+  // is looked for instead — and when there is none, nothing is inserted.
+  const documentLines = document.getText().split('\n');
+  const bodyLine =
+    statementIndex === -1
+      ? bodyOpeningAfter(documentLines, position.line)
+      : undefined;
+
+  if (statementIndex === -1 && bodyLine === undefined) {
+    return undefined;
+  }
+
   let insertAfterLine =
     statementIndex === -1
-      ? position.line
+      ? (bodyLine as number)
       : nodes[statementIndex].range.end.line;
   // A statement spanning several lines ends on a continuation line indented
   // further than its own first line; the log belongs at the statement's indent.
   let indentFromLine =
     statementIndex === -1
-      ? position.line
+      ? (bodyLine as number)
       : nodes[statementIndex].range.start.line;
-  // Falling back to the cursor's line lands inside a block whenever that line
-  // opens one, and then the log needs the body's indent rather than the header's.
-  let insideBlock =
-    statementIndex === -1 &&
-    document.lineAt(position.line).text.trimEnd().endsWith('{');
+  // Landing on a body opening means the log goes at the top of that body, so it
+  // needs one level more than the line that opens it.
+  let insideBlock = statementIndex === -1;
 
   // When the cursor sits in a closure's parameter list, the statement found
   // above is the enclosing call, outside the closure — and a log for a parameter
