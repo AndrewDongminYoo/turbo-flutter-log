@@ -15,7 +15,7 @@
   },
   "homepage": "https://github.com/AndrewDongminYoo/turbo-flutter-log#readme",
   "engines": {
-    "vscode": "^1.96.0"
+    "vscode": "^1.125.0"
   },
   "icon": "images/turbo-flutter-log.png",
   "categories": [
