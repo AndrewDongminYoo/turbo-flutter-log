@@ -38,8 +38,12 @@ export function firstCodeBlock(markdown: string): string {
 /**
  * Decides whether the thing under the cursor can be logged.
  *
- * Returns `unknown` rather than a guess whenever the shape is unfamiliar, so the caller keeps its
- * text-based fallback for the window while the analysis server is starting.
+ * Returns `unknown` rather than a guess whenever the shape is unfamiliar, so the caller keeps a
+ * text-based fallback for it.
+ *
+ * The window while the analysis server is starting is *not* this function's job: the caller only
+ * asks for a hover once the selection-range provider has answered, so an empty answer here means the
+ * analyzer looked and found nothing — a keyword — rather than that nobody was listening.
  */
 export function classifyHover(
   markdown: string | undefined,

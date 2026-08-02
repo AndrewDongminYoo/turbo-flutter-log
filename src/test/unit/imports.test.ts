@@ -1,6 +1,6 @@
 import * as assert from 'assert';
 
-import { planImport } from '../../imports';
+import { importShift, planImport } from '../../imports';
 
 suite('planImport', () => {
   suite('print', () => {
@@ -182,5 +182,35 @@ suite('debugPrint availability', () => {
       'developer',
     );
     assert.strictEqual(plan.insertAtLine, 1);
+  });
+});
+
+suite('importShift', () => {
+  test('moves code that sits below the directive', () => {
+    // Regression: the directive and the log go in as one edit, both computed
+    // against pre-edit positions, so a log that baked in the old number reported
+    // a line one above the expression the moment it was written.
+    const plan = planImport(['void main() {'], 'debugPrint', 'developer');
+
+    assert.strictEqual(plan.insertAtLine, 0);
+    assert.strictEqual(importShift(plan, 0), 1);
+    assert.strictEqual(importShift(plan, 12), 1);
+  });
+
+  test('leaves code above the directive alone', () => {
+    const plan = planImport(
+      ["import 'dart:async';", 'void main() {'],
+      'debugPrint',
+      'developer',
+    );
+
+    assert.strictEqual(plan.insertAtLine, 1);
+    assert.strictEqual(importShift(plan, 0), 0);
+  });
+
+  test('is zero when the plan adds nothing', () => {
+    const plan = planImport(['void main() {'], 'print', 'developer');
+
+    assert.strictEqual(importShift(plan, 0), 0);
   });
 });

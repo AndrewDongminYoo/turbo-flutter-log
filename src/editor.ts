@@ -21,6 +21,7 @@ import {
   isDeclarationModifier,
   isLoggableExpression,
   isLoggableIdentifier,
+  isLoggableName,
 } from './target';
 
 const SECTION = 'turbo-flutter-log';
@@ -216,20 +217,32 @@ async function readHover(
     .join('\n');
 }
 
-export async function resolveEnclosingSymbols(
+/**
+ * Fetches the document's symbol tree once.
+ *
+ * Separate from {@link enclosingSymbolsIn} because the tree is the same for every line of an
+ * unedited document: resolving it per log turned one round trip into one per line of the file.
+ */
+export async function readSymbolTree(
   document: vscode.TextDocument,
-  line: number,
-): Promise<EnclosingSymbols> {
+): Promise<SymbolNode[] | undefined> {
   const symbols = await vscode.commands.executeCommand<
     vscode.DocumentSymbol[] | undefined
   >('vscode.executeDocumentSymbolProvider', document.uri);
 
   if (!symbols || symbols.length === 0) {
     warnProviderUnavailable();
-    return {};
+    return undefined;
   }
 
-  const chain = findEnclosingChain(symbols as SymbolNode[], line);
+  return symbols as SymbolNode[];
+}
+
+export function enclosingSymbolsIn(
+  tree: readonly SymbolNode[] | undefined,
+  line: number,
+): EnclosingSymbols {
+  const chain = findEnclosingChain(tree, line);
 
   return {
     enclosingClass: chain.find((symbol) => CLASS_KINDS.has(symbol.kind))?.name,
@@ -284,10 +297,15 @@ async function fromCursor(
     return declared ?? '';
   }
 
-  // The analyzer confirmed this word is a value, and the user pointed at it.
-  // Widening past an explicit selection would log something they did not ask
-  // for — `state` becoming `state.needsReload`, or `prefs` becoming a call.
-  if (kind === 'value' && preferWord) {
+  // The user pointed at this word, so it is what gets logged. Widening past an
+  // explicit selection would log something they did not ask for — `state`
+  // becoming `state.needsReload`, or `prefs` becoming a call.
+  //
+  // This has to hold for `unknown` as well as `value`: with no analyzer answer
+  // the selection is the only thing anyone said about the intent, and honouring
+  // it only for `value` meant the widening happened exactly when there was least
+  // reason to trust it.
+  if (preferWord && isLoggableName(word)) {
     return word;
   }
 

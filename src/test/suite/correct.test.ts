@@ -87,6 +87,46 @@ suite('correctAllLogMessages', () => {
     assert.ok(!corrected.includes(':99'), corrected);
   });
 
+  test('keeps a trailing comment on the corrected line', async () => {
+    // Regression: the comment matched but fell outside every capture group, so
+    // rebuilding the line deleted it without a word.
+    const document = await openDart(
+      [
+        'void main() {',
+        "  final user = 'u';",
+        `${stale} // why twice`,
+        '}',
+        '',
+      ].join('\n'),
+    );
+
+    await vscode.commands.executeCommand(
+      'turbo-flutter-log.correctAllLogMessages',
+    );
+
+    const corrected = document.lineAt(2).text;
+    assert.ok(!corrected.includes(':99'), corrected);
+    assert.ok(corrected.endsWith(' // why twice'), corrected);
+  });
+
+  test('reads the line from the code, not from the log above it', async () => {
+    // Regression: matching the expression as a bare substring let the preceding
+    // log win, so the second of two stacked logs reported the first one's line.
+    const document = await openDart(
+      ['void main() {', "  final user = 'u';", stale, stale, '}', ''].join(
+        '\n',
+      ),
+    );
+
+    await vscode.commands.executeCommand(
+      'turbo-flutter-log.correctAllLogMessages',
+    );
+
+    for (const line of [2, 3]) {
+      assert.ok(document.lineAt(line).text.includes(':2 '), `line ${line}`);
+    }
+  });
+
   test('refuses to touch a file that is not Dart', async () => {
     const document = await vscode.workspace.openTextDocument({
       language: 'typescript',

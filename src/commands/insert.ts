@@ -3,13 +3,14 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import {
+  enclosingSymbolsIn,
   readPageWidth,
+  readSymbolTree,
   readTurboConfig,
   requireDartEditor,
-  resolveEnclosingSymbols,
   resolveTarget,
 } from '../editor';
-import { planImport } from '../imports';
+import { importShift, planImport } from '../imports';
 import {
   buildLogStatementWithin,
   indentationOf,
@@ -44,6 +45,9 @@ export async function displayLogMessage(): Promise<void> {
   const effective = { ...config, developerLogAlias: importPlan.alias };
 
   const pageWidth = await readPageWidth(document);
+  // One tree for the whole command: nothing is edited until the end, so every
+  // cursor resolves against the same symbols.
+  const symbols = await readSymbolTree(document);
 
   const insertions = await Promise.all(
     editor.selections.map(async (selection) => {
@@ -52,19 +56,23 @@ export async function displayLogMessage(): Promise<void> {
         return undefined;
       }
 
-      const { enclosingClass, enclosingFunction } =
-        await resolveEnclosingSymbols(document, selection.active.line);
+      const { enclosingClass, enclosingFunction } = enclosingSymbolsIn(
+        symbols,
+        selection.active.line,
+      );
 
       const indent =
         indentationOf(document.lineAt(target.indentFromLine).text) +
         (target.insideBlock ? DART_INDENT : '');
+      const shift = importShift(importPlan, target.expressionLine);
       const statement = buildLogStatementWithin(
         effective,
         {
           fileName,
           // The line of the logged expression, one-based as the editor shows it —
-          // not the line the log itself lands on.
-          lineNumber: target.expressionLine + 1,
+          // not the line the log itself lands on, and after any directive this
+          // command is about to insert above it.
+          lineNumber: target.expressionLine + 1 + shift,
           enclosingClass,
           enclosingFunction,
           expression: target.expression,

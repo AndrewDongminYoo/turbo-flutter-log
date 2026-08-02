@@ -70,6 +70,18 @@ export interface ImportPlan {
   text?: string;
 }
 
+/**
+ * How far `line` moves down when the plan is applied.
+ *
+ * The directive and the log go in as one `editor.edit()`, so both are computed against pre-edit
+ * positions — but the directive always lands above the code, and the log reports a line number that
+ * has to describe the file afterwards. Without this the first log in a file was wrong on arrival,
+ * which is exactly what the correct command exists to repair.
+ */
+export function importShift(plan: ImportPlan, line: number): number {
+  return plan.insertAtLine !== undefined && plan.insertAtLine <= line ? 1 : 0;
+}
+
 /** Where a new directive belongs: after the last one, else after a library header, else at the top. */
 function anchorFor(lines: readonly string[]): number {
   let lastDirective = -1;

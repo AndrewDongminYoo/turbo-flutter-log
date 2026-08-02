@@ -3,36 +3,20 @@ import * as path from 'path';
 import * as vscode from 'vscode';
 
 import {
+  enclosingSymbolsIn,
   readPageWidth,
+  readSymbolTree,
   readTurboConfig,
   requireDartEditor,
-  resolveEnclosingSymbols,
 } from '../editor';
-import { linesInsideStrings, matchTurboLog } from '../marker';
+import {
+  findExpressionLine,
+  linesInsideStrings,
+  matchTurboLog,
+} from '../marker';
 import { parseTurboLog } from '../parse';
 import { isLoggableExpression } from '../target';
 import { buildLogStatementWithin } from '../statement';
-
-/**
- * Finds the line the logged expression lives on, searching upwards from the log.
- *
- * A log sits after the statement it reports, so the expression is above it — but not necessarily on
- * the line directly above, since that may be the closing line of a multi-line statement. Matching
- * the expression text is exact where it works, and the line above is a reasonable answer where it
- * does not.
- */
-function findExpressionLine(
-  document: vscode.TextDocument,
-  logLine: number,
-  expression: string,
-): number {
-  for (let line = logLine - 1; line >= 0 && line >= logLine - 20; line -= 1) {
-    if (document.lineAt(line).text.includes(expression)) {
-      return line;
-    }
-  }
-  return Math.max(0, logLine - 1);
-}
 
 /**
  * Re-emits every turbo log in the active file with a fresh file name, line number, and enclosing
@@ -54,7 +38,11 @@ export async function correctAllLogMessages(): Promise<void> {
   const pageWidth = await readPageWidth(document);
 
   const corrections: { line: number; text: string }[] = [];
-  const inString = linesInsideStrings(document.getText().split('\n'));
+  const lines = document.getText().split('\n');
+  const inString = linesInsideStrings(lines);
+  // Nothing is edited until the loop is over, so the symbol tree is the same for
+  // every log in the file and is fetched once rather than per correction.
+  const symbols = await readSymbolTree(document);
 
   for (let line = 0; line < document.lineCount; line += 1) {
     if (inString[line]) {
@@ -76,12 +64,13 @@ export async function correctAllLogMessages(): Promise<void> {
     }
 
     const expressionLine = findExpressionLine(
-      document,
+      lines,
       line,
       parsed.expression,
+      config,
     );
-    const { enclosingClass, enclosingFunction } = await resolveEnclosingSymbols(
-      document,
+    const { enclosingClass, enclosingFunction } = enclosingSymbolsIn(
+      symbols,
       expressionLine,
     );
 
@@ -91,6 +80,10 @@ export async function correctAllLogMessages(): Promise<void> {
         logFunction: parsed.logFunction,
         logLevel: parsed.logLevel ?? config.logLevel,
         quote: parsed.quote,
+        // The alias the log was written with, not the configured preference: a
+        // file that imports `dart:developer` only as `dev` stops compiling if a
+        // correction re-emits the call as `developer.log`.
+        developerLogAlias: parsed.developerLogAlias ?? config.developerLogAlias,
       },
       {
         fileName,
@@ -99,11 +92,14 @@ export async function correctAllLogMessages(): Promise<void> {
         enclosingFunction,
         expression: parsed.expression,
       },
-      parts.indent,
+      // The budget is what the statement is allowed to fill, and a commented log
+      // starts after its own `// `; measuring against the indent alone let the
+      // rewritten line overflow by exactly that much.
+      parts.indent + parts.comment,
       pageWidth,
     );
 
-    const text = `${parts.indent}${parts.comment}${statement}`;
+    const text = `${parts.indent}${parts.comment}${statement}${parts.trailing}`;
     if (text !== raw) {
       corrections.push({ line, text });
     }
