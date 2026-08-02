@@ -92,6 +92,24 @@ suite('chooseExpression', () => {
     assert.strictEqual(chooseExpression([]), '');
   });
 
+  test('yields nothing when the innermost range is a declarator', () => {
+    // Regression: Dart returns the whole declarator for a cursor on the declared
+    // name. Seeding the walk with it unchecked logged `name = session.user.name`,
+    // which reassigns a final variable and does not compile.
+    assert.strictEqual(
+      chooseExpression(['name = session.user.name', 'final name = ...']),
+      '',
+    );
+  });
+
+  test('yields nothing when the innermost range spans lines', () => {
+    // Regression: same shape, from a cursor inside a multi-line statement.
+    assert.strictEqual(
+      chooseExpression(["result = await fetch<String>(\n  'key',\n)"]),
+      '',
+    );
+  });
+
   test('never climbs into a multi-line ancestor', () => {
     const chain = ['user', 'user.profile', 'if (x) {\n  user.profile\n}'];
     assert.strictEqual(chooseExpression(chain), 'user.profile');
@@ -145,10 +163,28 @@ suite('chooseStatementText', () => {
     );
   });
 
-  test('returns undefined when the statement spans lines', () => {
+  test('finds a statement that spans several lines', () => {
+    // Regression: restricting this to single-line ancestors returned undefined
+    // here, the caller fell back to the cursor's line, and the log landed inside
+    // the argument list. Chain captured from `dart language-server` for a cursor
+    // in `final result = await fetch<String>(\n  'key',\n);`.
+    const multiLine =
+      "    final result = await fetch<String>(\n      'key',\n    );";
+
     assert.strictEqual(
-      chooseStatementText(['user', 'call(\n  user,\n);']),
-      undefined,
+      chooseStatementText([
+        multiLine,
+        multiLine,
+        '  Future<bool> load() {\n...\n  }',
+      ]),
+      multiLine,
+    );
+  });
+
+  test('prefers the innermost statement over an enclosing one', () => {
+    assert.strictEqual(
+      chooseStatementText(['user', 'print(user);', 'if (x) call();']),
+      'print(user);',
     );
   });
 

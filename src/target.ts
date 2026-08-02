@@ -70,7 +70,18 @@ export function hasTopLevelStop(text: string): boolean {
  * A parent that wraps rather than extends, such as `user` → `(user)` inside `print(user)`, ends the walk: the argument is what the user meant, not the call.
  */
 export function chooseExpression(chain: readonly string[]): string {
-  let candidate = chain[0] ?? '';
+  const seed = chain[0] ?? '';
+
+  // The innermost range is not always a value reference. Dart hands back the
+  // whole declarator for a cursor on the declared name — `name = session.user.name`
+  // — and the whole multi-line statement when the cursor sits on a name inside
+  // one. Logging either produces invalid Dart, so the chain yields nothing and
+  // the caller falls back to the word under the cursor.
+  if (seed.includes('\n') || hasTopLevelStop(seed)) {
+    return '';
+  }
+
+  let candidate = seed;
 
   for (const parent of chain.slice(1)) {
     if (parent.includes('\n') || hasTopLevelStop(parent)) {
@@ -95,12 +106,21 @@ export function chooseExpression(chain: readonly string[]): string {
 /**
  * Picks the enclosing statement from the same chain, so the caller knows which line the log goes after.
  *
- * Returns `undefined` when no single-line ancestor ends the statement — a multi-line statement, or a cursor outside one — and the caller falls back to the cursor's own line.
+ * Multi-line statements count, and must: a statement such as
+ *
+ * ```dart
+ * final result = await fetch<String>(
+ *   'key',
+ * );
+ * ```
+ *
+ * arrives as one range spanning three lines, and the log belongs after its last line.
+ * Restricting this to single-line ancestors put the log inside the argument list and broke the file.
+ *
+ * Returns `undefined` only when nothing in the chain ends a statement, and the caller then falls back to the cursor's own line.
  */
 export function chooseStatementText(
   chain: readonly string[],
 ): string | undefined {
-  return chain.find(
-    (text) => !text.includes('\n') && text.trimEnd().endsWith(';'),
-  );
+  return chain.find((text) => text.trimEnd().endsWith(';'));
 }

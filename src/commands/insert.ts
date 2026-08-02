@@ -8,7 +8,7 @@ import {
   resolveEnclosingSymbols,
   resolveTarget,
 } from '../editor';
-import { planDeveloperImport } from '../imports';
+import { planImport } from '../imports';
 import {
   buildLogStatement,
   indentationOf,
@@ -32,16 +32,12 @@ export async function displayLogMessage(): Promise<void> {
 
   // The plan comes first: it may adopt an alias already used in this file, and
   // the emitted call has to match that rather than the configured preference.
-  const importPlan =
-    config.logFunction === 'developer.log'
-      ? planDeveloperImport(
-          document.getText().split('\n'),
-          config.developerLogAlias,
-        )
-      : undefined;
-  const effective = importPlan
-    ? { ...config, developerLogAlias: importPlan.alias }
-    : config;
+  const importPlan = planImport(
+    document.getText().split('\n'),
+    config.logFunction,
+    config.developerLogAlias,
+  );
+  const effective = { ...config, developerLogAlias: importPlan.alias };
 
   const insertions = await Promise.all(
     editor.selections.map(async (selection) => {
@@ -55,8 +51,9 @@ export async function displayLogMessage(): Promise<void> {
 
       const statement = buildLogStatement(effective, {
         fileName,
-        // The editor shows one-based lines, and so should the log.
-        lineNumber: target.insertAfterLine + 2,
+        // The line of the logged expression, one-based as the editor shows it —
+        // not the line the log itself lands on.
+        lineNumber: target.expressionLine + 1,
         enclosingClass,
         enclosingFunction,
         expression: target.expression,

@@ -28,7 +28,7 @@ export interface TurboConfig {
 }
 
 export const DEFAULT_CONFIG: TurboConfig = {
-  logFunction: 'debugPrint',
+  logFunction: 'print',
   logLevel: 'debug',
   marker: '🎯',
   delimiter: ' · ',

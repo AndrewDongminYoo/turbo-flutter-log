@@ -96,6 +96,14 @@ export interface EnclosingSymbols {
 export interface ResolvedTarget {
   /** The Dart expression to log. */
   expression: string;
+  /**
+   * Zero-based line where the logged expression lives.
+   *
+   * This is what the message reports, not the line the log itself lands on: the
+   * useful fact is where the value is read, and the log's own position shifts
+   * with every later edit anyway.
+   */
+  expressionLine: number;
   /** Zero-based line the log statement goes after. */
   insertAfterLine: number;
 }
@@ -169,8 +177,13 @@ export async function resolveTarget(
   }
   const chain = nodes.map((node) => document.getText(node.range));
 
+  // When the chain yields nothing usable — the innermost range is a declarator
+  // or a whole multi-line statement — the identifier under the cursor is the
+  // best remaining answer, and VS Code already knows where its boundaries are.
+  const fromChain = chooseExpression(chain);
+  const wordRange = document.getWordRangeAtPosition(position);
   const expression = selection.isEmpty
-    ? chooseExpression(chain)
+    ? fromChain || (wordRange ? document.getText(wordRange) : '')
     : document.getText(selection).trim();
 
   if (expression.length === 0 || expression.includes('\n')) {
@@ -187,5 +200,9 @@ export async function resolveTarget(
       ? position.line
       : nodes[statementIndex].range.end.line;
 
-  return { expression, insertAfterLine };
+  return {
+    expression,
+    expressionLine: selection.isEmpty ? position.line : selection.start.line,
+    insertAfterLine,
+  };
 }

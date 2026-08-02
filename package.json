@@ -28,11 +28,11 @@
             "developer.log"
           ],
           "enumDescriptions": [
-            "dart:core print(). Always printed, including in release builds.",
-            "Flutter's debugPrint(). Throttled so long output is not dropped by the platform.",
-            "dart:developer log(). Carries the enclosing symbol as name: and the level as level:, and adds its import automatically."
+            "dart:core print(). No import needed, which is why it is the default. Always printed, including in release builds.",
+            "Flutter debugPrint(). Throttled so long output is not dropped by the platform. Adds package:flutter/foundation.dart when no Flutter library already provides it.",
+            "dart:developer log(). Carries the enclosing symbol as name: and the level as level:, and adds its prefixed import automatically."
           ],
-          "default": "debugPrint",
+          "default": "print",
           "description": "Which Dart logging call to insert."
         },
         "turbo-flutter-log.logLevel": {
