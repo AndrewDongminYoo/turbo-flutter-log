@@ -72,9 +72,19 @@ export function classifyHover(
     return 'not-a-value';
   }
 
+  // `Future<void> reload()` is a method. A bare `reload` is not in scope, and
+  // climbing to `prefs.reload()` would call it again — logging must not have
+  // side effects — so a callable is never a value here.
+  const signature = declaration.split('(')[0];
+  if (
+    declaration.length > signature.length &&
+    signature.trimEnd().endsWith(word)
+  ) {
+    return 'not-a-value';
+  }
+
   // `Object finalObj`, `Sheet? sheet`, `String name`, `dynamic variable` — the
   // declared name comes last, so a declaration of this word is a value.
-  const signature = declaration.split('(')[0];
   const names = signature.match(/[A-Za-z_$][A-Za-z0-9_$]*/g) ?? [];
 
   if (names.length >= 2 && names[names.length - 1] === word) {

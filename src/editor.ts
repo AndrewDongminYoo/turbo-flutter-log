@@ -119,6 +119,16 @@ export interface ResolvedTarget {
   expressionLine: number;
   /** Zero-based line the log statement goes after. */
   insertAfterLine: number;
+  /**
+   * Zero-based line whose indentation the log copies.
+   *
+   * Not the same as {@link insertAfterLine}: a statement spanning several lines ends on a
+   * continuation line indented further than its own first line, and copying that would indent the
+   * log too deeply.
+   */
+  indentFromLine: number;
+  /** True when the log goes at the top of a block, so it needs one level more than its opening line. */
+  insideBlock: boolean;
 }
 
 let warnedAboutProvider = false;
@@ -340,6 +350,17 @@ export async function resolveTarget(
     statementIndex === -1
       ? position.line
       : nodes[statementIndex].range.end.line;
+  // A statement spanning several lines ends on a continuation line indented
+  // further than its own first line; the log belongs at the statement's indent.
+  let indentFromLine =
+    statementIndex === -1
+      ? position.line
+      : nodes[statementIndex].range.start.line;
+  // Falling back to the cursor's line lands inside a block whenever that line
+  // opens one, and then the log needs the body's indent rather than the header's.
+  let insideBlock =
+    statementIndex === -1 &&
+    document.lineAt(position.line).text.trimEnd().endsWith('{');
 
   // When the cursor sits in a closure's parameter list, the statement found
   // above is the enclosing call, outside the closure — and a log for a parameter
@@ -353,6 +374,8 @@ export async function resolveTarget(
 
     const start = nodes[index + 1].range.start;
     insertAfterLine = start.line + opening.lineOffset;
+    indentFromLine = insertAfterLine;
+    insideBlock = true;
     break;
   }
 
@@ -378,5 +401,7 @@ export async function resolveTarget(
     expression,
     expressionLine: selection.isEmpty ? position.line : selection.start.line,
     insertAfterLine,
+    indentFromLine,
+    insideBlock,
   };
 }

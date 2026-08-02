@@ -7,6 +7,7 @@ import {
   closureBodyOpening,
   declaredNameIn,
   hasTopLevelStop,
+  isDeclaration,
   isLoggableExpression,
   isLoggableIdentifier,
 } from '../../target';
@@ -421,5 +422,38 @@ suite('closureBodyOpening', () => {
     );
     assert.strictEqual(closureBodyOpening(undefined, 'x'), undefined);
     assert.strictEqual(closureBodyOpening('(x)', undefined), undefined);
+  });
+});
+
+suite('isDeclaration', () => {
+  test('recognises a formal parameter, which the chain returns for a signature cursor', () => {
+    // Regression: a cursor in `build(BuildContext context)` returned the whole
+    // parameter, and `${BuildContext context}` does not compile.
+    assert.ok(isDeclaration('BuildContext context'));
+    assert.ok(isDeclaration('Map<String, dynamic> map'));
+    assert.ok(isDeclaration('Sheet? sheet'));
+    assert.ok(isDeclaration('List<int> values'));
+  });
+
+  test('does not mistake an expression for a declaration', () => {
+    for (const text of [
+      'user',
+      'user.profile.name',
+      'a + b',
+      "m['k']",
+      'compute(a, b)',
+      'await prefs.reload()',
+      'const Duration(seconds: 1)',
+      'return value',
+    ]) {
+      assert.ok(!isDeclaration(text), text);
+    }
+  });
+
+  test('chooseExpression rejects a declaration seed', () => {
+    assert.strictEqual(
+      chooseExpression(['BuildContext context', '(BuildContext context)']),
+      '',
+    );
   });
 });

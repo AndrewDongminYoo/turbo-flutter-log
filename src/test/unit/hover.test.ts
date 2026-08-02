@@ -93,3 +93,32 @@ suite('classifyHover', () => {
     );
   });
 });
+
+suite('callables', () => {
+  test('a method is not a value, since a bare name is out of scope', () => {
+    // Regression: a cursor on `reload` in `await prefs.reload();` logged
+    // `$reload`. Climbing to `prefs.reload()` would call it again, so refusing
+    // is the only safe answer.
+    assert.strictEqual(
+      classifyHover(
+        ['```dart', 'Future<void> reload()', '```'].join('\n'),
+        'reload',
+      ),
+      'not-a-value',
+    );
+    assert.strictEqual(
+      classifyHover(
+        ['```dart', 'int compute(int a)', '```'].join('\n'),
+        'compute',
+      ),
+      'not-a-value',
+    );
+  });
+
+  test('a getter is still a value', () => {
+    assert.strictEqual(
+      classifyHover(['```dart', 'int get scope', '```'].join('\n'), 'scope'),
+      'value',
+    );
+  });
+});

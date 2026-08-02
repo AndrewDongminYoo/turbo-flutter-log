@@ -16,6 +16,9 @@ import {
   renderStatementBlock,
 } from '../statement';
 
+/** Dart's standard indent, used when a log goes at the top of a block. */
+const DART_INDENT = '  ';
+
 /**
  * Inserts a log statement for every cursor.
  *
@@ -52,9 +55,9 @@ export async function displayLogMessage(): Promise<void> {
       const { enclosingClass, enclosingFunction } =
         await resolveEnclosingSymbols(document, selection.active.line);
 
-      const indent = indentationOf(
-        document.lineAt(target.insertAfterLine).text,
-      );
+      const indent =
+        indentationOf(document.lineAt(target.indentFromLine).text) +
+        (target.insideBlock ? DART_INDENT : '');
       const statement = buildLogStatementWithin(
         effective,
         {

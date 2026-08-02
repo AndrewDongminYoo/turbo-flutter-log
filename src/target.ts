@@ -213,6 +213,27 @@ export function hasTopLevelStop(text: string): boolean {
 }
 
 /**
+ * True when `text` is a declaration rather than an expression — a type followed by a name.
+ *
+ * A cursor in a signature such as `build(BuildContext context)` makes the analysis server return
+ * the whole formal parameter as the innermost range, and `${BuildContext context}` does not compile.
+ *
+ * Two identifier runs separated only by whitespace is the signature of a declaration. Expressions
+ * put an operator between their operands, with the exception of the few prefix keywords listed here.
+ */
+export function isDeclaration(text: string): boolean {
+  const trimmed = text.trim();
+
+  if (/^(?:await|new|const|return|throw|yield)\s/.test(trimmed)) {
+    return false;
+  }
+
+  return /^[A-Za-z_][A-Za-z0-9_<>,?[\]. ]*\s+[A-Za-z_][A-Za-z0-9_]*$/.test(
+    trimmed,
+  );
+}
+
+/**
  * True when `text` can stand on its own as a Dart expression, so it may be interpolated.
  *
  * Laxer than {@link hasTopLevelStop}, which picks the *best* expression from a chain of candidates.
@@ -271,10 +292,11 @@ export function chooseExpression(chain: readonly string[]): string {
 
   // The innermost range is not always a value reference. Dart hands back the
   // whole declarator for a cursor on the declared name — `name = session.user.name`
-  // — and the whole multi-line statement when the cursor sits on a name inside
-  // one. Logging either produces invalid Dart, so the chain yields nothing and
-  // the caller falls back to the word under the cursor.
-  if (seed.includes('\n') || hasTopLevelStop(seed)) {
+  // — the whole multi-line statement when the cursor sits on a name inside one,
+  // and the whole formal parameter for a cursor in a signature. Logging any of
+  // them produces invalid Dart, so the chain yields nothing and the caller falls
+  // back to the word under the cursor.
+  if (seed.includes('\n') || hasTopLevelStop(seed) || isDeclaration(seed)) {
     return '';
   }
 
