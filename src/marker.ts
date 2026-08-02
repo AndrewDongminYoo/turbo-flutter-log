@@ -13,21 +13,57 @@ export function escapeRegExp(text: string): string {
  * Every callee is matched, not just the configured one, so logs inserted before a settings change are still found.
  * Both quote styles are matched for the same reason.
  *
+ * The `developer.log` prefix is matched as *any* identifier rather than the configured alias.
+ * Insertion adopts an alias already present in the file, so pinning this to the setting made the
+ * extension unable to find logs it had just written — `dev.log(…)` inserted, then invisible to
+ * comment, delete and correct.
+ *
  * The marker must be the first thing inside the literal.
  * `print('user said {marker} hello')` is a hand-written log and is deliberately not matched.
+ *
+ * The statement body excludes `;`, so a line holding a log *and* a second statement does not match
+ * at all. The bulk commands edit whole lines, and a greedy body let `print('…'); doSomething();`
+ * match as one unit — deleting the log took the other statement with it.
  *
  * Capture groups: 1 leading indentation, 2 the `//` of a commented log if present, 3 the statement itself.
  * The returned expression is stateful (`g`); callers must not share it across passes.
  */
 export function turboLogPattern(config: TurboConfig): RegExp {
   const marker = escapeRegExp(config.marker);
-  const alias = escapeRegExp(config.developerLogAlias);
-  const callee = `(?:print|debugPrint|${alias}\\.log)`;
+  const callee = `(?:print|debugPrint|[A-Za-z_$][A-Za-z0-9_$]*\\.log)`;
 
   return new RegExp(
-    `^([ \\t]*)(//[ \\t]?)?(${callee}\\(\\s*['"]${marker}.*\\);)[ \\t]*$`,
+    `^([ \\t]*)(//[ \\t]?)?(${callee}\\(\\s*['"]${marker}[^;]*\\);)[ \\t]*(?://.*)?$`,
     'gm',
   );
+}
+
+/** Dart's multi-line string delimiters. Their contents are text, not code. */
+const TRIPLE_QUOTE = /'''|"""/g;
+
+/**
+ * Marks which lines sit inside a multi-line string literal.
+ *
+ * A `'''` block can hold anything, including something shaped exactly like a log. Editing those
+ * lines rewrites the contents of a string — a code template or a test fixture — rather than code,
+ * so the bulk and correct commands skip them.
+ *
+ * Counts delimiters rather than parsing: a `'''` inside a single-quoted string would confuse it,
+ * which is rare enough to accept and errs toward skipping rather than editing.
+ */
+export function linesInsideStrings(lines: readonly string[]): boolean[] {
+  let inside = false;
+
+  return lines.map((line) => {
+    const startedInside = inside;
+    const delimiters = line.match(TRIPLE_QUOTE)?.length ?? 0;
+    if (delimiters % 2 === 1) {
+      inside = !inside;
+    }
+    // A line that opens or closes the block is itself part of the surrounding
+    // code, so only lines fully within it are skipped.
+    return startedInside && inside;
+  });
 }
 
 export interface TurboLogParts {

@@ -1,5 +1,5 @@
 import type { TurboConfig } from './config';
-import { matchTurboLog } from './marker';
+import { linesInsideStrings, matchTurboLog } from './marker';
 
 export type BulkMode = 'comment' | 'uncomment' | 'delete';
 
@@ -26,8 +26,14 @@ export function planBulkEdits(
   mode: BulkMode,
 ): LineEdit[] {
   const edits: LineEdit[] = [];
+  // A `'''` block can hold something shaped exactly like a log; editing it would
+  // rewrite the contents of a string rather than code.
+  const inString = linesInsideStrings(lines);
 
   for (const [line, text] of lines.entries()) {
+    if (inString[line]) {
+      continue;
+    }
     const parts = matchTurboLog(text, config);
     if (!parts) {
       continue;

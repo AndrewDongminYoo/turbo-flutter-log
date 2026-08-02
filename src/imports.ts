@@ -30,6 +30,37 @@ const DEBUG_PRINT_SOURCES = [
   'package:flutter/cupertino.dart',
 ];
 
+/**
+ * True when `line` is an import that puts `debugPrint` in scope *unqualified*.
+ *
+ * Naming one of the libraries is not enough. Three forms name one and still leave the bare call
+ * unresolved, and the extension emits `debugPrint(…)` with no prefix:
+ *
+ * ```dart
+ * import 'package:flutter/material.dart' as material;   // material.debugPrint
+ * import 'package:flutter/material.dart' hide debugPrint;
+ * import 'package:flutter/widgets.dart' show Widget;    // debugPrint not among them
+ * ```
+ */
+function providesDebugPrint(line: string): boolean {
+  const directive = /^\s*import\s+(['"])([^'"]+)\1(.*);/.exec(line);
+  if (!directive || !DEBUG_PRINT_SOURCES.includes(directive[2])) {
+    return false;
+  }
+
+  const combinators = directive[3];
+
+  if (/\bas\s+[A-Za-z_$]/.test(combinators)) {
+    return false;
+  }
+  if (/\bhide\b[^;]*\bdebugPrint\b/.test(combinators)) {
+    return false;
+  }
+
+  const shown = /\bshow\b([^;]*)/.exec(combinators);
+  return shown === null || /\bdebugPrint\b/.test(shown[1]);
+}
+
 export interface ImportPlan {
   /** Prefix the emitted call must use. Empty for an unprefixed import. */
   alias: string;
@@ -71,11 +102,7 @@ export function planImport(
   }
 
   if (logFunction === 'debugPrint') {
-    const satisfied = lines.some(
-      (line) =>
-        ANY_DIRECTIVE.test(line) &&
-        DEBUG_PRINT_SOURCES.some((source) => line.includes(source)),
-    );
+    const satisfied = lines.some((line) => providesDebugPrint(line));
 
     return satisfied
       ? { alias: preferredAlias }

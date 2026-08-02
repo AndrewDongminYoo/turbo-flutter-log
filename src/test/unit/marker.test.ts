@@ -1,7 +1,12 @@
 import * as assert from 'assert';
 
 import { LOG_FUNCTIONS, resolveConfig, type TurboConfig } from '../../config';
-import { escapeRegExp, isTurboLog, turboLogPattern } from '../../marker';
+import {
+  escapeRegExp,
+  isTurboLog,
+  linesInsideStrings,
+  turboLogPattern,
+} from '../../marker';
 import { buildLogStatement, type LogContext } from '../../statement';
 
 const CONTEXT: LogContext = {
@@ -97,8 +102,33 @@ suite('turboLogPattern', () => {
 
     assert.ok(statement.startsWith('dev.log('), statement);
     assert.ok(isTurboLog(statement, config));
-    // The default alias must not match a log written against a different one.
-    assert.ok(!isTurboLog(statement, resolveConfig({})));
+
+    // Regression: this used to assert the opposite. Insertion adopts an alias
+    // already present in the file, so pinning the pattern to the configured one
+    // left the extension unable to find logs it had just written.
+    assert.ok(isTurboLog(statement, resolveConfig({})), statement);
+  });
+
+  test('does not match a call that merely ends in .log without the marker', () => {
+    const config = resolveConfig({});
+    assert.ok(!isTurboLog("logger.log('starting up');", config));
+  });
+
+  test('skips a line carrying a second statement beside the log', () => {
+    // Regression: the bulk commands edit whole lines, so matching this deleted
+    // `doSomething();` along with the log.
+    const config = resolveConfig({ logFunction: 'print' });
+    const statement = buildLogStatement(config, CONTEXT);
+
+    assert.ok(!isTurboLog(`  ${statement} doSomething();`, config));
+    assert.ok(isTurboLog(`  ${statement}`, config));
+  });
+
+  test('matches a log carrying a trailing comment', () => {
+    const config = resolveConfig({ logFunction: 'print' });
+    const statement = buildLogStatement(config, CONTEXT);
+
+    assert.ok(isTurboLog(`  ${statement} // keep an eye on this`, config));
   });
 
   test('treats a marker containing regex metacharacters literally', () => {
@@ -125,5 +155,39 @@ suite('turboLogPattern', () => {
 
     assert.ok(isTurboLog(statement, config));
     assert.ok(isTurboLog(statement, config));
+  });
+});
+
+suite('linesInsideStrings', () => {
+  test('marks the body of a multi-line string', () => {
+    // Regression: a log-shaped line inside a ''' block is the contents of a
+    // string, and editing it corrupts a template rather than removing a log.
+    const lines = [
+      "final template = '''",
+      "  print('\u{1F3AF} \u00B7 x: $x');",
+      "''';",
+      "print('\u{1F3AF} \u00B7 y: $y');",
+    ];
+
+    assert.deepStrictEqual(linesInsideStrings(lines), [
+      false,
+      true,
+      false,
+      false,
+    ]);
+  });
+
+  test('leaves an ordinary file untouched', () => {
+    assert.deepStrictEqual(
+      linesInsideStrings(['void main() {', "  print('a');", '}']),
+      [false, false, false],
+    );
+  });
+
+  test('handles a single-line triple-quoted string', () => {
+    assert.deepStrictEqual(
+      linesInsideStrings(["final s = '''one line''';", 'final t = 1;']),
+      [false, false],
+    );
   });
 });

@@ -8,8 +8,9 @@ import {
   requireDartEditor,
   resolveEnclosingSymbols,
 } from '../editor';
-import { matchTurboLog } from '../marker';
+import { linesInsideStrings, matchTurboLog } from '../marker';
 import { parseTurboLog } from '../parse';
+import { isLoggableExpression } from '../target';
 import { buildLogStatementWithin } from '../statement';
 
 /**
@@ -53,8 +54,13 @@ export async function correctAllLogMessages(): Promise<void> {
   const pageWidth = await readPageWidth(document);
 
   const corrections: { line: number; text: string }[] = [];
+  const inString = linesInsideStrings(document.getText().split('\n'));
 
   for (let line = 0; line < document.lineCount; line += 1) {
+    if (inString[line]) {
+      continue;
+    }
+
     const raw = document.lineAt(line).text;
     const parts = matchTurboLog(raw, config);
     if (!parts) {
@@ -62,7 +68,10 @@ export async function correctAllLogMessages(): Promise<void> {
     }
 
     const parsed = parseTurboLog(parts.statement, config);
-    if (!parsed) {
+    // Rewriting from a misread expression would break a log that works today —
+    // an expression containing the delimiter is one way to misread one. Leaving
+    // it alone is always safe; correcting it is not.
+    if (!parsed || !isLoggableExpression(parsed.expression)) {
       continue;
     }
 

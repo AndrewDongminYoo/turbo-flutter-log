@@ -78,7 +78,11 @@ export function resolveConfig(raw: RawConfig): TurboConfig {
       : DEFAULT_CONFIG.logFunction,
     logLevel: isLogLevel(raw.logLevel) ? raw.logLevel : DEFAULT_CONFIG.logLevel,
     marker: FORBIDDEN_IN_MARKER.test(marker) ? DEFAULT_CONFIG.marker : marker,
-    delimiter: pickString(raw.delimiter, DEFAULT_CONFIG.delimiter),
+    // An empty delimiter leaves the segments unseparated and makes the log
+    // impossible to read back, so correct could never fix it again.
+    delimiter:
+      pickString(raw.delimiter, DEFAULT_CONFIG.delimiter) ||
+      DEFAULT_CONFIG.delimiter,
     quote: (QUOTES as readonly unknown[]).includes(raw.quote)
       ? (raw.quote as Quote)
       : DEFAULT_CONFIG.quote,
@@ -119,5 +123,7 @@ export function resolveConfig(raw: RawConfig): TurboConfig {
  * Every command refuses to run in that state: an unmarked log can never be cleaned up, and an empty marker would make the detection pattern match every log in the file.
  */
 export function hasUsableMarker(config: TurboConfig): boolean {
-  return config.marker.length > 0;
+  // Whitespace is no better than nothing: a marker of two spaces matches every
+  // log whose message happens to start with two spaces.
+  return config.marker.trim().length > 0;
 }

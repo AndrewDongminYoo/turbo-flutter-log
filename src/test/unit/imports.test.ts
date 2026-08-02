@@ -142,3 +142,45 @@ suite('planImport', () => {
     });
   });
 });
+
+suite('debugPrint availability', () => {
+  // Regression: naming one of the libraries was treated as enough, so these
+  // three suppressed the import while the emitted bare `debugPrint(…)` would
+  // not resolve.
+  const NOT_ENOUGH = [
+    "import 'package:flutter/material.dart' as material;",
+    "import 'package:flutter/material.dart' hide debugPrint;",
+    "import 'package:flutter/widgets.dart' show Widget;",
+    "import 'package:flutter/foundation.dart' hide debugPrint, debugPrintStack;",
+  ];
+
+  for (const directive of NOT_ENOUGH) {
+    test(`adds the import despite ${JSON.stringify(directive)}`, () => {
+      const plan = planImport([directive], 'debugPrint', 'developer');
+      assert.strictEqual(plan.insertAtLine, 1, directive);
+    });
+  }
+
+  const ENOUGH = [
+    "import 'package:flutter/material.dart';",
+    "import 'package:flutter/foundation.dart';",
+    "import 'package:flutter/widgets.dart' show Widget, debugPrint;",
+    "import 'package:flutter/cupertino.dart' hide Icons;",
+  ];
+
+  for (const directive of ENOUGH) {
+    test(`adds nothing given ${JSON.stringify(directive)}`, () => {
+      const plan = planImport([directive], 'debugPrint', 'developer');
+      assert.strictEqual(plan.insertAtLine, undefined, directive);
+    });
+  }
+
+  test('is not satisfied by a library that merely looks similar', () => {
+    const plan = planImport(
+      ["import 'package:flutter_test/material.dart';"],
+      'debugPrint',
+      'developer',
+    );
+    assert.strictEqual(plan.insertAtLine, 1);
+  });
+});
