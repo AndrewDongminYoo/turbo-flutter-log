@@ -1,0 +1,46 @@
+name: Release
+
+# Publishing is manual by design: pushing a `v*` tag is the deliberate act.
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify the tag matches package.json
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          manifest="$(node -p 'require("./package.json").version')"
+          if [ "$tag" != "$manifest" ]; then
+            echo "tag v$tag does not match package.json version $manifest" >&2
+            exit 1
+          fi
+
+      - run: npm run check-types
+
+      - run: npm run lint
+
+      - run: npm run test:unit
+
+      - name: Extension host tests
+        run: xvfb-run -a npm test
+
+      - name: Publish to the Marketplace
+        run: npx --yes @vscode/vsce publish --pat "$VSCE_PAT"
+        env:
+          VSCE_PAT: ${{ secrets.VSCE_PAT }}
