@@ -2,7 +2,7 @@
   "name": "turbo-flutter-log",
   "displayName": "Turbo Flutter Log",
   "description": "Insert, comment, delete and correct Flutter/Dart log statements from the keyboard.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "dongminyu",
   "license": "MIT",
   "author": "Dongmin Yu",
@@ -229,7 +229,7 @@
     "test:unit": "npm run compile-tests && mocha --ui tdd \"out/test/unit/**/*.test.js\"",
     "test:all": "npm run test:unit && npm test"
   },
-  "packageManager": "pnpm@11.15.1",
+  "packageManager": "pnpm@11.22.0",
   "devDependencies": {
     "@types/mocha": "^10.0.10",
     "@types/node": "~20.19.43",

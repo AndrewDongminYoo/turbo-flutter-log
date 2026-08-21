@@ -7,6 +7,10 @@ docs/**
 node_modules/**
 out/**
 src/**
+.claude
+.codex
+.codegraph
+.omo
 
 .gitignore
 .prettierrc

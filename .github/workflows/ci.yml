@@ -17,27 +17,31 @@ jobs:
   test:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: pnpm/action-setup@v6
         with:
-          node-version: 22
-          cache: npm
+          version: 11.22.0
 
-      - run: npm ci
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
 
-      - run: npm run check-types
+      - run: pnpm install --frozen-lockfile
 
-      - run: npm run lint
+      - run: pnpm run check-types
 
-      - run: npm run test:unit
+      - run: pnpm run lint
+
+      - run: pnpm run test:unit
 
       # The extension-host suite launches a real VS Code, which needs a display.
       - name: Extension host tests
-        run: xvfb-run -a npm test
+        run: xvfb-run -a pnpm test
 
       - name: Package
-        run: npx --yes @vscode/vsce package --out turbo-flutter-log.vsix
+        run: pnpm run vsce:package --out turbo-flutter-log.vsix
 
       - uses: actions/upload-artifact@v4
         with:
