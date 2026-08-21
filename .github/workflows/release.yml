@@ -15,14 +15,14 @@ jobs:
   publish:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
-          cache: npm
+          node-version: 24
+          cache: pnpm
 
-      - run: npm ci
+      - run: pnpm install --frozen-lockfile
 
       - name: Verify the tag matches package.json
         run: |
@@ -33,14 +33,14 @@ jobs:
             exit 1
           fi
 
-      - run: npm run check-types
+      - run: pnpm run check-types
 
-      - run: npm run lint
+      - run: pnpm run lint
 
-      - run: npm run test:unit
+      - run: pnpm run test:unit
 
       - name: Extension host tests
-        run: xvfb-run -a npm test
+        run: xvfb-run -a pnpm test
 
       # `vsce` is a devDependency so `npm ci` installs the version the lockfile
       # pins, with its integrity hash. `npx --yes @vscode/vsce` would instead run
