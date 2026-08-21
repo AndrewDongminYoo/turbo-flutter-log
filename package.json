@@ -2,7 +2,7 @@
   "name": "turbo-flutter-log",
   "displayName": "Turbo Flutter Log",
   "description": "Insert, comment, delete and correct Flutter/Dart log statements from the keyboard.",
-  "version": "0.1.0",
+  "version": "1.0.0",
   "publisher": "dongminyu",
   "license": "MIT",
   "author": "Dongmin Yu",
