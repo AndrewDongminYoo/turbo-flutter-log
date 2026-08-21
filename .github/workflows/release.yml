@@ -46,7 +46,7 @@ jobs:
       - name: Extension host tests
         run: xvfb-run -a pnpm test
 
-      # `vsce` is a devDependency so `npm ci` installs the version the lockfile
+      # `vsce` is a devDependency so `pnpm install --frozen-lockfile` installs the version the lockfile
       # pins, with its integrity hash. `npx --yes @vscode/vsce` would instead run
       # whatever is latest on npm at tag-push time, in the one job holding the PAT.
       - name: Publish to the Marketplace
