@@ -8,7 +8,8 @@ import * as path from 'path';
  * tree. pnpm fails softly here: an override it does not read, or a lockfile
  * that was never regenerated, still produces a clean install exit code while
  * the vulnerable version stays on disk. This asserts the two files agree and
- * that every installed version inside an override's major clears its floor.
+ * that every installed version inside an override's major sits inside the
+ * window its range opens.
  */
 
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -89,6 +90,51 @@ function parseCaret(range: string): [number, number, number] {
 }
 
 /**
+ * Asserts one installed version sits inside the window `range` opens.
+ *
+ * A caret window narrows as its leading zeros accumulate: `^1.2.3` admits any
+ * later 1.x, `^0.2.3` is `>=0.2.3 <0.3.0`, and `^0.0.3` is `>=0.0.3 <0.0.4`.
+ * The floor alone would pass `0.0.4` against `^0.0.3` — a version the override
+ * does not select, so seeing it means the override was never applied.
+ */
+function assertInsideOverride(
+  name: string,
+  version: string,
+  range: string,
+  [floorMajor, floorMinor, floorPatch]: [number, number, number],
+): void {
+  const [vMajor, vMinor, vPatch] = version
+    .split('.')
+    .map((part) => Number.parseInt(part, 10));
+
+  assert.strictEqual(
+    vMajor,
+    floorMajor,
+    `${name}@${version} sits outside the ${range} override`,
+  );
+  // A caret on 0.x is minor-locked, so the floor's minor must match.
+  if (floorMajor === 0) {
+    assert.strictEqual(
+      vMinor,
+      floorMinor,
+      `${name}@${version} sits outside the ${range} override`,
+    );
+  }
+  assert.ok(
+    vMinor > floorMinor || (vMinor === floorMinor && vPatch >= floorPatch),
+    `${name}@${version} is below the ${range} override`,
+  );
+  // Below 0.1.0 the caret is patch-locked too, so the floor is also the cap.
+  if (floorMajor === 0 && floorMinor === 0) {
+    assert.strictEqual(
+      vPatch,
+      floorPatch,
+      `${name}@${version} sits outside the ${range} override`,
+    );
+  }
+}
+
+/**
  * Every version of `name` that the lockfile resolved, peer suffixes ignored.
  *
  * Lockfile v9 quotes any key that starts with `@`, so a scoped entry reads
@@ -149,6 +195,32 @@ suite('pnpm security overrides', () => {
     assert.deepStrictEqual(installedVersions(lock, 'plain-pkg'), ['1.2.3']);
   });
 
+  // Every live override carries a non-zero major, so the narrower caret
+  // windows below 1.0.0 are unreachable from real data. Fixtures pin them
+  // here: ^0.2.3 is minor-locked and ^0.0.3 is patch-locked as well, and a
+  // lockfile outside either window means the override never took effect.
+  test('holds the caret window for 0.x and 0.0.x floors', () => {
+    const check = (version: string, range: string): void =>
+      assertInsideOverride('pkg', version, range, parseCaret(range));
+
+    assert.doesNotThrow(() => check('1.5.0', '^1.2.3'));
+    assert.doesNotThrow(() => check('0.2.9', '^0.2.3'));
+    assert.doesNotThrow(() => check('0.0.3', '^0.0.3'));
+
+    assert.throws(
+      () => check('0.3.0', '^0.2.3'),
+      /pkg@0\.3\.0 sits outside the \^0\.2\.3 override/,
+    );
+    assert.throws(
+      () => check('0.0.4', '^0.0.3'),
+      /pkg@0\.0\.4 sits outside the \^0\.0\.3 override/,
+    );
+    assert.throws(
+      () => check('0.0.2', '^0.0.3'),
+      /pkg@0\.0\.2 is below the \^0\.0\.3 override/,
+    );
+  });
+
   test('resolves every overridden package at or above its floor', () => {
     const lock = fs.readFileSync(path.join(ROOT, LOCKFILE), 'utf8');
 
@@ -172,28 +244,11 @@ suite('pnpm security overrides', () => {
       );
 
       for (const version of scoped) {
-        const [vMajor, vMinor, vPatch] = version
-          .split('.')
-          .map((part) => Number.parseInt(part, 10));
-
-        assert.strictEqual(
-          vMajor,
+        assertInsideOverride(name, version, range, [
           floorMajor,
-          `${name}@${version} sits outside the ${range} override`,
-        );
-        // A caret on 0.x is minor-locked, so the floor's minor must match.
-        if (floorMajor === 0) {
-          assert.strictEqual(
-            vMinor,
-            floorMinor,
-            `${name}@${version} sits outside the ${range} override`,
-          );
-        }
-        assert.ok(
-          vMinor > floorMinor ||
-            (vMinor === floorMinor && vPatch >= floorPatch),
-          `${name}@${version} is below the ${range} override`,
-        );
+          floorMinor,
+          floorPatch,
+        ]);
       }
     }
   });
