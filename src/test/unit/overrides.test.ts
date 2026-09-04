@@ -96,6 +96,10 @@ function parseCaret(range: string): [number, number, number] {
  * later 1.x, `^0.2.3` is `>=0.2.3 <0.3.0`, and `^0.0.3` is `>=0.0.3 <0.0.4`.
  * The floor alone would pass `0.0.4` against `^0.0.3` — a version the override
  * does not select, so seeing it means the override was never applied.
+ *
+ * Anything but a plain `X.Y.Z` throws, because the tuple comparison below is
+ * blind to a suffix: `3.1.6-beta.1` reduces to `3.1.6` and passes `^3.1.6`,
+ * which no stable caret selects.
  */
 function assertInsideOverride(
   name: string,
@@ -103,9 +107,16 @@ function assertInsideOverride(
   range: string,
   [floorMajor, floorMinor, floorPatch]: [number, number, number],
 ): void {
-  const [vMajor, vMinor, vPatch] = version
-    .split('.')
-    .map((part) => Number.parseInt(part, 10));
+  const parts = /^(\d+)\.(\d+)\.(\d+)$/.exec(version);
+  if (!parts) {
+    throw new Error(
+      `${name}@${version} is not a plain X.Y.Z version; this guard cannot ` +
+        `verify it against ${range}`,
+    );
+  }
+  const vMajor = Number(parts[1]);
+  const vMinor = Number(parts[2]);
+  const vPatch = Number(parts[3]);
 
   assert.strictEqual(
     vMajor,
@@ -218,6 +229,19 @@ suite('pnpm security overrides', () => {
     assert.throws(
       () => check('0.0.2', '^0.0.3'),
       /pkg@0\.0\.2 is below the \^0\.0\.3 override/,
+    );
+  });
+
+  // A prerelease sorts below the release it is named for, so `3.1.6-beta.1`
+  // sits outside `^3.1.6` and inside the range the override was meant to
+  // close. Comparing numeric fields alone discards the suffix and reads it as
+  // `3.1.6`, which passes. Every live override resolves to a plain X.Y.Z
+  // today, so a fixture pins the rejection rather than waiting for a lockfile
+  // to smuggle one through.
+  test('refuses a version it cannot compare as a plain X.Y.Z', () => {
+    assert.throws(
+      () => assertInsideOverride('pkg', '3.1.6-beta.1', '^3.1.6', [3, 1, 6]),
+      /pkg@3\.1\.6-beta\.1 is not a plain X\.Y\.Z version/,
     );
   });
 
