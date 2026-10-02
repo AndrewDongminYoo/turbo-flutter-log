@@ -6,3 +6,4 @@ allowBuilds:
 overrides:
   fast-uri@3: ^3.1.6 # GHSA-5jgf-p345-68v8, GHSA-f65p-4m7j-42xc, GHSA-fph4-wmhf-6fwf, GHSA-jqff-g426-hqxp
   serialize-javascript: ^7.0.5 # GHSA-5c6j-r48x-rmvq, GHSA-qj8w-gfj5-8c6v
+  undici@7: ^7.29.1 # GHSA-w293-vg96-wgc3
