@@ -13,24 +13,32 @@ const HAND_WRITTEN = "  print('starting up');";
 
 const SOURCE = ['void main() {', HAND_WRITTEN, TURBO, '}', ''].join('\n');
 
-/** `undo` is dispatched to the workbench and lands on the document asynchronously. */
-async function nextChange(
-  document: vscode.TextDocument,
-  timeoutMs = 2000,
-): Promise<void> {
-  await new Promise<void>((resolve) => {
-    const timer = setTimeout(finish, timeoutMs);
-    const subscription = vscode.workspace.onDidChangeTextDocument((event) => {
-      if (event.document === document) {
-        finish();
-      }
-    });
-    function finish(): void {
-      clearTimeout(timer);
-      subscription.dispose();
-      resolve();
-    }
-  });
+/** Observe the model undo event, not only the command promise. */
+async function undo(document: vscode.TextDocument): Promise<void> {
+  let subscription: vscode.Disposable | undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  try {
+    await Promise.all([
+      new Promise<void>((resolve, reject) => {
+        subscription = vscode.workspace.onDidChangeTextDocument((event) => {
+          if (
+            event.document === document &&
+            event.reason === vscode.TextDocumentChangeReason.Undo
+          ) {
+            resolve();
+          }
+        });
+        timer = setTimeout(
+          () => reject(new Error('No document undo event received')),
+          2000,
+        );
+      }),
+      vscode.commands.executeCommand('undo'),
+    ]);
+  } finally {
+    clearTimeout(timer);
+    subscription?.dispose();
+  }
 }
 
 async function openDart(content: string): Promise<vscode.TextDocument> {
@@ -79,19 +87,33 @@ suite('bulk commands', () => {
     assert.strictEqual(text.split('\n').length, SOURCE.split('\n').length - 1);
   });
 
-  test('a whole command is a single undo step', async () => {
-    const document = await openDart(SOURCE);
+  test('a whole command is a single undo step', async function () {
+    this.timeout(30000);
+    const source = SOURCE.replace(TURBO, `${TURBO}\n${TURBO}`);
+    const document = await openDart(source);
+
+    // Native window activation can wait for workbench startup on macOS.
+    await vscode.commands.executeCommand('workbench.action.focusWindow');
+    const focusDeadline = Date.now() + 2000;
+    while (!vscode.window.state.focused && Date.now() < focusDeadline) {
+      await new Promise((resolve) => setTimeout(resolve, 20));
+    }
+    assert.ok(
+      vscode.window.state.focused,
+      'Undo requires a focused host window',
+    );
+    await vscode.commands.executeCommand(
+      'workbench.action.focusActiveEditorGroup',
+    );
 
     await vscode.commands.executeCommand(
       'turbo-flutter-log.deleteAllLogMessages',
     );
-    assert.notStrictEqual(document.getText(), SOURCE);
+    assert.ok(!document.getText().includes('🎯'), document.getText());
+    assert.ok(document.getText().includes(HAND_WRITTEN.trim()));
 
-    const settled = nextChange(document);
-    await vscode.commands.executeCommand('undo');
-    await settled;
-
-    assert.strictEqual(document.getText(), SOURCE);
+    await undo(document);
+    assert.strictEqual(document.getText(), source);
   });
 
   test('refuses to touch a file that is not Dart', async () => {

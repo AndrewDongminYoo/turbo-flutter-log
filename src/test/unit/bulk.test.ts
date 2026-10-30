@@ -72,7 +72,10 @@ suite('planBulkEdits', () => {
     const statement = buildLogStatement(config, CONTEXT);
     const [edit] = planBulkEdits([`      ${statement}`], config, 'comment');
 
-    assert.ok(edit.text?.startsWith('      // '), edit.text);
+    assert.ok(
+      edit.text?.startsWith('      // '),
+      edit.text ?? 'missing edit text',
+    );
   });
 
   test('is a no-op on an already-commented log', () => {
