@@ -43,8 +43,7 @@ lint:
     - markdownlint@0.50.0
     - osv-scanner@2.7.0
     - oxipng@10.2.1
-    - pinact@4.1.1!:
-        commands: [lint, upgrade]
+    - pinact@4.1.1!
     - prettier@3.9.10
     - taplo@0.10.0
     - trufflehog@3.99.7
