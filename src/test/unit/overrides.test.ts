@@ -3,13 +3,9 @@ import * as fs from 'fs';
 import * as path from 'path';
 
 /**
- * Security overrides are declared in `pnpm-workspace.yaml` but only take effect
- * once `pnpm install` copies them into `pnpm-lock.yaml` and re-resolves the
- * tree. pnpm fails softly here: an override it does not read, or a lockfile
- * that was never regenerated, still produces a clean install exit code while
- * the vulnerable version stays on disk. This asserts the two files agree and
- * that every installed version inside an override's major sits inside the
- * window its range opens.
+ * Security overrides are declared in `pnpm-workspace.yaml` and resolved through `pnpm-lock.yaml`.
+ * This guard requires matching override metadata and verifies the applicable lockfile dependency edges against their own floors.
+ * Consumer scopes must not include an unrelated parent's major; native installation and runtime checks verify the on-disk graph separately.
  */
 
 const ROOT = path.join(__dirname, '..', '..', '..');
@@ -62,7 +58,19 @@ function readOverrides(file: string): Record<string, string> {
  * Splits `fast-uri@3` into its package name and major selector. A scoped name
  * carries its own leading `@`, so the split anchors on the last one.
  */
-function splitSelector(selector: string): { name: string; major?: number } {
+type PackageSelector = { name: string; major?: number };
+
+function splitSelector(
+  selector: string,
+): PackageSelector & { consumer?: PackageSelector } {
+  const chain = selector.split('>');
+  if (chain.length > 2 || chain.some((part) => part.length === 0)) {
+    throw new Error(`${selector} is an unsupported consumer selector`);
+  }
+  if (chain.length === 2) {
+    return { ...splitSelector(chain[1]), consumer: splitSelector(chain[0]) };
+  }
+
   const at = selector.lastIndexOf('@');
   if (at <= 0) {
     return { name: selector };
@@ -146,18 +154,126 @@ function assertInsideOverride(
 }
 
 /**
- * Every version of `name` that the lockfile resolved, peer suffixes ignored.
- *
- * Lockfile v9 quotes any key that starts with `@`, so a scoped entry reads
- * `  '@scope/name@1.2.3':` and the closing quote is what follows the version.
+ * Lockfile resolutions of `name`, optionally restricted to one consumer's direct edges.
+ * Consumer scopes require pnpm v9 snapshots with stable version references and permit peer suffixes.
+ * Bare selectors retain the whole-lock behavior.
  */
-function installedVersions(lock: string, name: string): string[] {
+function installedVersions(
+  lock: string,
+  name: string,
+  consumer?: PackageSelector,
+): string[] {
+  if (consumer) {
+    if (!/^lockfileVersion: (['"]?)9\.0\1[ \t]*\r?$/m.test(lock)) {
+      throw new Error('consumer verification requires pnpm lockfile v9');
+    }
+    const lines = lock.split(/\r?\n/);
+    const start = lines.indexOf('snapshots:');
+    if (start === -1) {
+      throw new Error('consumer verification requires a snapshots: block');
+    }
+
+    const versions = new Set<string>();
+    const seenSnapshots = new Set<string>();
+    let snapshot = '';
+    let matches = false;
+    let dependencies = false;
+    let seenChild = false;
+    for (const line of lines.slice(start + 1)) {
+      if (!line.trim() || line.trimStart().startsWith('#')) {
+        continue;
+      }
+      if (/^\S/.test(line)) {
+        break;
+      }
+      const header = /^ {2}(\S.*):(?: \{\})?[ \t]*$/.exec(line);
+      if (header) {
+        snapshot = unquote(header[1]);
+        const key = snapshot.split('(')[0];
+        const prefix = `${consumer.name}@`;
+        matches = key.startsWith(prefix);
+        dependencies = false;
+        seenChild = false;
+        if (matches) {
+          const version = key.slice(prefix.length);
+          if (!/^\d+\.\d+\.\d+$/.test(version)) {
+            throw new Error(`unsupported consumer snapshot ${snapshot}`);
+          }
+          matches =
+            consumer.major === undefined ||
+            Number(version.split('.')[0]) === consumer.major;
+          if (matches) {
+            if (seenSnapshots.has(snapshot)) {
+              throw new Error(`repeats consumer snapshot ${snapshot}`);
+            }
+            seenSnapshots.add(snapshot);
+          }
+        }
+        continue;
+      }
+      if (!matches) {
+        continue;
+      }
+      if (/^ {4}\S/.test(line)) {
+        dependencies = /^ {4}(?:optionalDependencies|dependencies):$/.test(
+          line,
+        );
+      }
+      const edge = dependencies ? /^ {6}(\S+): (\S+)/.exec(line) : null;
+      if (edge && unquote(edge[1]) === name) {
+        if (seenChild) {
+          throw new Error(`${snapshot} repeats dependency ${name}`);
+        }
+        seenChild = true;
+        const version = unquote(edge[2]).split('(')[0];
+        if (!/^\d+\.\d+\.\d+$/.test(version)) {
+          throw new Error(
+            `${snapshot} has an unsupported dependency reference for ${name}`,
+          );
+        }
+        versions.add(version);
+      }
+    }
+    return [...versions];
+  }
+
   const escaped = name.replace(/[.*+?^${}()|[\]\\/]/g, '\\$&');
   const keys = new RegExp(
     `^ {2}'?${escaped}@(\\d+\\.\\d+\\.\\d+[^\\s(:']*)['(:]`,
     'gm',
   );
   return [...new Set([...lock.matchAll(keys)].map((match) => match[1]))];
+}
+
+function assertResolvedOverride(
+  lock: string,
+  selector: string,
+  range: string,
+): void {
+  const { name, major, consumer } = splitSelector(selector);
+  const [floorMajor, floorMinor, floorPatch] = parseCaret(range);
+
+  const versions = installedVersions(lock, name, consumer);
+  assert.ok(
+    versions.length > 0,
+    `${selector} matches no installed dependency edges for ${name}`,
+  );
+
+  const scoped = versions.filter(
+    (version) => major === undefined || Number(version.split('.')[0]) === major,
+  );
+  assert.ok(
+    scoped.length > 0,
+    `${selector} matches none of the installed ${name} versions: ${versions.join(', ')}`,
+  );
+
+  for (const version of scoped) {
+    assertInsideOverride(name, version, range, [
+      floorMajor,
+      floorMinor,
+      floorPatch,
+    ]);
+  }
 }
 
 suite('pnpm security overrides', () => {
@@ -206,6 +322,159 @@ suite('pnpm security overrides', () => {
     assert.deepStrictEqual(installedVersions(lock, 'plain-pkg'), ['1.2.3']);
   });
 
+  test('parses consumer selectors separately from dependency majors', () => {
+    assert.doesNotThrow(() => splitSelector('mocha@11>diff'));
+    assert.deepStrictEqual(splitSelector('mocha@11>diff'), {
+      name: 'diff',
+      consumer: { name: 'mocha', major: 11 },
+    });
+    assert.deepStrictEqual(splitSelector('@scope/tool@4>@scope/dependency@7'), {
+      name: '@scope/dependency',
+      major: 7,
+      consumer: { name: '@scope/tool', major: 4 },
+    });
+  });
+
+  test('refuses deeper or empty consumer chains', () => {
+    for (const selector of [
+      'outer>inner>dependency',
+      '>dependency',
+      'consumer>',
+    ]) {
+      assert.throws(
+        () => splitSelector(selector),
+        /unsupported consumer selector/,
+      );
+    }
+  });
+
+  test('keeps unrelated consumer majors outside an override', () => {
+    const lock = [
+      "lockfileVersion: '9.0'",
+      'snapshots:',
+      '  diff@8.0.4: {}',
+      '  diff@9.0.0: {}',
+      '  mocha@11.8.0:',
+      '  # A comment must not end the current snapshot:',
+      '    dependencies:',
+      '      diff: 8.0.4',
+      '  mocha@12.0.3:',
+      '    dependencies:',
+      '      diff: 9.0.0',
+    ].join('\n');
+
+    assert.doesNotThrow(() =>
+      assertResolvedOverride(lock, 'mocha@11>diff', '^8.0.4'),
+    );
+    assert.doesNotThrow(() =>
+      assertResolvedOverride(lock, 'mocha@12>diff', '^9.0.0'),
+    );
+    assert.throws(
+      () => assertResolvedOverride(lock, 'mocha@10>diff', '^8.0.4'),
+      /matches no installed dependency edges/,
+    );
+    assert.throws(
+      () => assertResolvedOverride(lock, 'mocha@11>missing', '^8.0.4'),
+      /matches no installed dependency edges/,
+    );
+  });
+
+  test('does not let another consumer rescue a vulnerable edge', () => {
+    const lock = [
+      "lockfileVersion: '9.0'",
+      'snapshots:',
+      '  diff@7.0.0: {}',
+      '  diff@8.0.4: {}',
+      '  mocha@11.8.0:',
+      '    dependencies:',
+      '      diff: 7.0.0',
+      '  mocha@12.0.3:',
+      '    dependencies:',
+      '      diff: 8.0.4',
+    ].join('\n');
+
+    assert.throws(
+      () => assertResolvedOverride(lock, 'mocha@11>diff', '^8.0.4'),
+      /diff@7\.0\.0 sits outside the \^8\.0\.4 override/,
+    );
+  });
+
+  test('reads scoped consumer peer variants and direct optional edges', () => {
+    const lock = [
+      "lockfileVersion: '9.0'",
+      'snapshots:',
+      "  '@scope/dependency@7.1.4': {}",
+      "  '@scope/tool@4.2.0(peer@1.0.0)':",
+      '    dependencies:',
+      "      '@scope/dependency': 7.1.4(peer@1.0.0)",
+      "  '@scope/tool@4.2.0(peer@2.0.0)':",
+      '    optionalDependencies:',
+      "      '@scope/dependency': 7.1.4(peer@2.0.0)",
+    ].join('\r\n');
+
+    assert.doesNotThrow(() =>
+      assertResolvedOverride(
+        lock,
+        '@scope/tool@4>@scope/dependency@7',
+        '^7.1.4',
+      ),
+    );
+  });
+
+  test('does not read dependency lookalikes outside snapshots', () => {
+    const lock = [
+      "lockfileVersion: '9.0'",
+      'snapshots:',
+      '  diff@8.0.4: {}',
+      'importers:',
+      '  mocha@11.8.0:',
+      '    dependencies:',
+      '      diff: 8.0.4',
+    ].join('\n');
+
+    assert.throws(
+      () => assertResolvedOverride(lock, 'mocha@11>diff', '^8.0.4'),
+      /matches no installed dependency edges/,
+    );
+  });
+
+  test('rejects unsupported and ambiguous relevant lock entries', () => {
+    const prefix = [
+      "lockfileVersion: '9.0'",
+      'snapshots:',
+      '  mocha@11.8.0:',
+      '    dependencies:',
+    ].join('\n');
+
+    assert.throws(
+      () =>
+        assertResolvedOverride(
+          `${prefix}\n      diff: npm:other@8.0.4\n`,
+          'mocha@11>diff',
+          '^8.0.4',
+        ),
+      /unsupported dependency reference/,
+    );
+    assert.throws(
+      () =>
+        assertResolvedOverride(
+          `${prefix}\n      diff: 8.0.4\n      diff: 8.0.4\n`,
+          'mocha@11>diff',
+          '^8.0.4',
+        ),
+      /repeats dependency/,
+    );
+    assert.throws(
+      () =>
+        assertResolvedOverride(
+          "lockfileVersion: '8.0'\nsnapshots:\n",
+          'mocha@11>diff',
+          '^8.0.4',
+        ),
+      /requires pnpm lockfile v9/,
+    );
+  });
+
   // Every live override carries a non-zero major, so the narrower caret
   // windows below 1.0.0 are unreachable from real data. Fixtures pin them
   // here: ^0.2.3 is minor-locked and ^0.0.3 is patch-locked as well, and a
@@ -249,31 +518,7 @@ suite('pnpm security overrides', () => {
     const lock = fs.readFileSync(path.join(ROOT, LOCKFILE), 'utf8');
 
     for (const [selector, range] of Object.entries(readOverrides(WORKSPACE))) {
-      const { name, major } = splitSelector(selector);
-      const [floorMajor, floorMinor, floorPatch] = parseCaret(range);
-
-      const versions = installedVersions(lock, name);
-      assert.ok(
-        versions.length > 0,
-        `${selector} overrides ${name}, which the lockfile never resolves`,
-      );
-
-      const scoped = versions.filter(
-        (version) =>
-          major === undefined || Number(version.split('.')[0]) === major,
-      );
-      assert.ok(
-        scoped.length > 0,
-        `${selector} matches none of the installed ${name} versions: ${versions.join(', ')}`,
-      );
-
-      for (const version of scoped) {
-        assertInsideOverride(name, version, range, [
-          floorMajor,
-          floorMinor,
-          floorPatch,
-        ]);
-      }
+      assertResolvedOverride(lock, selector, range);
     }
   });
 });

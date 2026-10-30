@@ -4,6 +4,7 @@ allowBuilds:
   keytar: true
 
 overrides:
-  markdown-it@14: ^14.3.3 # GHSA-gfr2-rv44-r23c
-  serialize-javascript: ^7.0.5 # GHSA-5c6j-r48x-rmvq, GHSA-qj8w-gfj5-8c6v
-  undici@7: ^7.29.1 # GHSA-w293-vg96-wgc3
+  '@azure/identity@4>@azure/msal-node': ^7.1.2 # GHSA-xcx6-jx8p-x3h5; verify the actual parent API offline.
+  mocha@11>diff: ^8.0.4 # GHSA-73rr-hh4g-fpgx; the test CLI's Mocha 11 has no patched diff 7.
+  mocha@11>serialize-javascript: ^7.1.4 # GHSA-5c6j-r48x-rmvq, GHSA-qj8w-gfj5-8c6v, GHSA-m5mm-p8h7-m29v
+  mocha@12>serialize-javascript: ^7.1.4 # GHSA-m5mm-p8h7-m29v
