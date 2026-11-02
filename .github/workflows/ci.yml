@@ -40,8 +40,15 @@ jobs:
       - run: pnpm run test:unit
 
       # The extension-host suite launches a real VS Code, which needs a display.
-      - name: Extension host tests
+      - name: Extension host tests (minimum)
         run: xvfb-run -a pnpm test
+        env:
+          VSCODE_TEST_VERSION: 1.140.0
+
+      - name: Extension host tests (stable)
+        run: xvfb-run -a pnpm test
+        env:
+          VSCODE_TEST_VERSION: stable
 
       - name: Package
         run: pnpm run vsce:package --out turbo-flutter-log.vsix
