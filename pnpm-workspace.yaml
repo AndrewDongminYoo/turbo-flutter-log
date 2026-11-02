@@ -5,6 +5,19 @@ allowBuilds:
 
 overrides:
   '@azure/identity@4>@azure/msal-node': ^7.1.2 # GHSA-xcx6-jx8p-x3h5; verify the actual parent API offline.
+  '@eslint/config-array@0>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
+  '@typescript-eslint/typescript-estree@8>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
+  '@vscode/test-cli@0>glob': ^14.0.2 # GHSA-3g3m-2fjr-6pw4
+  '@vscode/test-cli@0>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
+  '@vscode/vsce@4>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
+  eslint@10>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249
   mocha@11>diff: ^8.0.4 # GHSA-73rr-hh4g-fpgx; the test CLI's Mocha 11 has no patched diff 7.
+  mocha@11>glob: ^14.0.2 # GHSA-3g3m-2fjr-6pw4
+  mocha@11>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249
   mocha@11>serialize-javascript: ^7.1.4 # GHSA-5c6j-r48x-rmvq, GHSA-qj8w-gfj5-8c6v, GHSA-m5mm-p8h7-m29v
+  mocha@12>glob: ^14.0.2 # GHSA-3g3m-2fjr-6pw4
+  mocha@12>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249
   mocha@12>serialize-javascript: ^7.1.4 # GHSA-m5mm-p8h7-m29v
+  npm-run-all@4>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249; the consumer uses the retained Minimatch class.
+  test-exclude@8>glob: ^14.0.2 # GHSA-3g3m-2fjr-6pw4
+  test-exclude@8>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249

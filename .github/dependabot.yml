@@ -25,6 +25,12 @@ updates:
       day: monday
       timezone: Asia/Seoul
     open-pull-requests-limit: 3
+    ignore:
+      # PR #13: newer VS Code API types break packaging for engines.vscode 1.140.
+      # Keep patch and security updates; advance API minors with the supported engine.
+      - dependency-name: '@types/vscode'
+        update-types:
+          - version-update:semver-minor
     groups:
       npm-minor-patch:
         patterns:
