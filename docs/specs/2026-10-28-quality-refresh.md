@@ -18,7 +18,7 @@ Extend only the existing security override test guard to verify one consumer sel
 - Scope transitive security overrides to their actual consumers and verify both runners after the generated lockfile is refreshed.
 - Scope patched MSAL Node `7.1.2` to Azure Identity `4`, whose latest parent still declares MSAL `6`.
   Verify the actual parent API through an injected transport with outbound networking blocked before accepting the major override.
-- Run extension-host tests with repository-local or disposable profiles and workspaces, without operator editor settings or real clipboard writes.
+- Run extension-host tests with repository-local or disposable profiles and workspaces, without user editor settings or real clipboard writes.
 
 ## Acceptance
 
@@ -45,7 +45,7 @@ The bounded Azure Identity/MSAL retrieval and one lexical retry also returned `[
 Those retrievals reported source commit `9670d54de3076c5239713f54900c7a855bd18478` with unverified freshness and no project-specific source path.
 A later account-neutral guard lookup returned `wiki/sources/claude--rules--scoped-dependency-overrides.md` and `raw/sources/.claude/rules/scoped-dependency-overrides.md` at the same source commit.
 That historical rule was folded into dependency-vulnerability guidance; it confirms consumer-edge checks and separate major floors rather than a blanket highest version.
-Treat the archived source as precedent, while current operator instructions and the actual resolved graph govern this repair.
+Treat the archived source as precedent, while current user instructions and the actual resolved graph govern this repair.
 Use the current manifest, installed runner, resolved graph, and actual extension-host results as evidence.
 
 ## Publication
@@ -62,7 +62,7 @@ Trunk uses `--monitor=false`, including hooks, and each one-off daemon is stoppe
 
 ## Approved host-test repair
 
-The operator approved investigation and repair of the baseline-existing macOS undo failure.
+Investigation and repair of the baseline-existing macOS undo failure were approved.
 The undo test activates the native host window before dispatch, waits for focus and observes a document event with reason Undo.
 The startup wait has a 30-second test budget; an undo event still has its own two-second failure deadline.
 Two marked log statements must be deleted and restored exactly by a single undo while preserving the handwritten log.

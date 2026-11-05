@@ -87,7 +87,7 @@ The minimum-host undo assertion fails with both the candidate and the original c
 Increasing only the outer timeout and explicitly focusing the target editor did not restore the synthetic document.
 The original graph also reproduces the optional assertion-message type error repaired above.
 These observations do not establish that the host failures have the same cause or that the refresh is free of regressions.
-This checkpoint blocked publication pending operator approval for further investigation; that approval has since been given.
+This checkpoint blocked publication pending approval for further investigation; that approval has since been given.
 The stable-host gate was pending at this historical checkpoint.
 Temporary diagnostic source changes were restored exactly, and owned profiles, wrappers and the baseline fixture were removed after checking for open handles.
 
