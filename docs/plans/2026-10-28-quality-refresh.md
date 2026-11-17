@@ -97,3 +97,20 @@ The native window activation request took about 6.8 seconds in the observed mini
 After activation, the real code-editor undo path emitted a model Undo event and restored the original source.
 Retain a bounded startup allowance in this test, fail explicitly if focus or the Undo event is missing, and verify the two-log transaction on both supported host boundaries.
 The repaired test passed the full 12-test host suite on VS Code 1.140.0 and 1.144.0 with two marked logs restored by one undo.
+
+## 2026-11-17 Reconciliation
+
+The steps above are the approved 2026-10-28 record and stay unchanged.
+The shipped code is the authority for the items below.
+
+- pnpm moved from major 11 to `12.21.0` in `c244ee1`, which supersedes the spec's "Keep pnpm on major 11".
+  pnpm 12 writes its own install graph as a separate YAML document ahead of the project graph in `pnpm-lock.yaml`.
+- The override guard read the first `snapshots:` block, which is that pnpm document, so every consumer selector failed with `matches no installed dependency edges`.
+  The overrides were still required: without them the lockfile resolves `minimatch` 9 and 10, `glob` 10 and 13, `diff` 7 and `serialize-javascript` 6, each inside its cited advisory range.
+  `f9beefd` adds `projectDocument` to `src/test/unit/overrides.test.ts`, which selects the project document and throws on an unrecognised layout; the test `reads the project document of a pnpm 12 lockfile` covers it.
+- `49c7213` removed the Azure Identity MSAL override.
+  Azure Identity `4.14.1` now depends on `@azure/msal-node` `7.2.2`, outside the GHSA-xcx6-jx8p-x3h5 range `< 7.1.0`, so the "Resolved Compatibility Findings" MSAL step no longer applies.
+- `2867a0f` replaces `eslint@SYSTEM` with `eslint@10.15.0`.
+  `eslint@SYSTEM` resolved only when Trunk ran through `pnpm exec`, and a plain `trunk check` failed with `Binary not found`; the system binary also changes with the active Node installation.
+  Trunk now installs ESLint itself and still reads `eslint.config.mjs` and the repository's TypeScript ESLint plugin and parser.
+  Keep the Trunk ESLint version equal to the version `pnpm-lock.yaml` resolves for `eslint`.

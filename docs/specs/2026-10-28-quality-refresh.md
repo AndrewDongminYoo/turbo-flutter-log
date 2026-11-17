@@ -9,6 +9,8 @@ Keep the extension version, command and configuration contributions, assets, app
 Permit a diagnostic fallback for the existing unit assertion whose optional message conflicts with the installed Node type overloads; keep its predicate unchanged.
 Extend only the existing security override test guard to verify one consumer selector against direct lockfile snapshot edges, with fail-closed fixtures and mutation proof.
 
+The pnpm major, MSAL override and Trunk ESLint items below were superseded on 2026-11-17; see "2026-11-17 Reconciliation" in `docs/plans/2026-10-28-quality-refresh.md`.
+
 ## Compatibility
 
 - Keep pnpm on major 11 and align the manifest and workflows with the latest compatible 11.x release.
