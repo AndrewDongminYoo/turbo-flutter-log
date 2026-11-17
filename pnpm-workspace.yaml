@@ -20,3 +20,6 @@ overrides:
   npm-run-all@4>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249; the consumer uses the retained Minimatch class.
   test-exclude@8>glob: ^14.0.2 # GHSA-3g3m-2fjr-6pw4
   test-exclude@8>minimatch: ^11.0.1 # GHSA-g3hv-75wg-m249
+
+# Keeps pnpm-lock.yaml one YAML document; GitHub's dependency graph reads only the first one.
+pmOnFail: ignore

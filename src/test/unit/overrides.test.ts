@@ -583,6 +583,18 @@ suite('pnpm security overrides', () => {
     );
   });
 
+  // GitHub's dependency graph reads only the first YAML document, so a pnpm 12
+  // env document in front hides every dependency from Dependabot alerts.
+  // `pmOnFail: ignore` in pnpm-workspace.yaml keeps pnpm from writing one.
+  test('keeps pnpm-lock.yaml one YAML document', () => {
+    const lock = fs.readFileSync(path.join(ROOT, LOCKFILE), 'utf8');
+    assert.strictEqual(
+      lock.match(/^---[ \t]*\r?$/gm),
+      null,
+      `${LOCKFILE} has more than one YAML document; set pmOnFail: ignore and regenerate it`,
+    );
+  });
+
   test('resolves every overridden package at or above its floor', () => {
     const lock = readLockfile();
 

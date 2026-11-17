@@ -114,3 +114,5 @@ The shipped code is the authority for the items below.
   `eslint@SYSTEM` resolved only when Trunk ran through `pnpm exec`, and a plain `trunk check` failed with `Binary not found`; the system binary also changes with the active Node installation.
   Trunk now installs ESLint itself and still reads `eslint.config.mjs` and the repository's TypeScript ESLint plugin and parser.
   Keep the Trunk ESLint version equal to the version `pnpm-lock.yaml` resolves for `eslint`.
+- `pnpm-workspace.yaml` sets `pmOnFail: ignore`, so `pnpm-lock.yaml` is one YAML document again and GitHub's dependency graph reads the project graph; the unit test `keeps pnpm-lock.yaml one YAML document` guards it.
+  The release workflow now uses pnpm `12.21.0`, which restores the Knowledge Audit rule that both workflows match `packageManager`.
