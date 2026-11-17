@@ -55,6 +55,34 @@ function readOverrides(file: string): Record<string, string> {
 }
 
 /**
+ * Returns the YAML document of `pnpm-lock.yaml` that holds the project graph.
+ *
+ * pnpm 12 writes the package manager's own install graph as a separate
+ * document ahead of the project graph, with its own `snapshots:` block. A
+ * reader that takes the first `snapshots:` scans pnpm's binaries and reports
+ * every consumer override as unused. Throws unless exactly one document is
+ * not the package-manager document, so a new layout fails loudly.
+ */
+function projectDocument(lock: string): string {
+  const documents = lock
+    .split(/^---[ \t]*\r?$/m)
+    .filter((document) => document.trim().length > 0);
+  const project = documents.filter(
+    (document) => !/^ {4}packageManagerDependencies:/m.test(document),
+  );
+  if (project.length !== 1) {
+    throw new Error(
+      `expected one project document in the lockfile, found ${project.length}`,
+    );
+  }
+  return project[0];
+}
+
+function readLockfile(): string {
+  return projectDocument(fs.readFileSync(path.join(ROOT, LOCKFILE), 'utf8'));
+}
+
+/**
  * Splits `fast-uri@3` into its package name and major selector. A scoped name
  * carries its own leading `@`, so the split anchors on the last one.
  */
@@ -279,7 +307,7 @@ function assertResolvedOverride(
 suite('pnpm security overrides', () => {
   test('records every workspace override in the lockfile', () => {
     assert.deepStrictEqual(
-      readOverrides(LOCKFILE),
+      parseOverrides(readLockfile(), LOCKFILE),
       readOverrides(WORKSPACE),
       `${LOCKFILE} does not match ${WORKSPACE}; run "pnpm install --no-frozen-lockfile"`,
     );
@@ -514,8 +542,49 @@ suite('pnpm security overrides', () => {
     );
   });
 
+  test('reads the project document of a pnpm 12 lockfile', () => {
+    const manager = [
+      '---',
+      "lockfileVersion: '9.0'",
+      'importers:',
+      '  .:',
+      '    packageManagerDependencies:',
+      '      pnpm:',
+      'snapshots:',
+      '  mocha@11.8.0:',
+      '    dependencies:',
+      '      diff: 7.0.0',
+    ];
+    const project = [
+      '---',
+      "lockfileVersion: '9.0'",
+      'overrides:',
+      '  mocha@11>diff: ^8.0.4',
+      'snapshots:',
+      '  mocha@11.8.0:',
+      '    dependencies:',
+      '      diff: 8.0.4',
+    ];
+    const lock = projectDocument([...manager, ...project].join('\n'));
+
+    assert.deepStrictEqual(parseOverrides(lock, 'fixture.yaml'), {
+      'mocha@11>diff': '^8.0.4',
+    });
+    assert.doesNotThrow(() =>
+      assertResolvedOverride(lock, 'mocha@11>diff', '^8.0.4'),
+    );
+    assert.strictEqual(
+      projectDocument(project.slice(1).join('\n')).trim(),
+      project.slice(1).join('\n'),
+    );
+    assert.throws(
+      () => projectDocument(manager.join('\n')),
+      /expected one project document in the lockfile, found 0/,
+    );
+  });
+
   test('resolves every overridden package at or above its floor', () => {
-    const lock = fs.readFileSync(path.join(ROOT, LOCKFILE), 'utf8');
+    const lock = readLockfile();
 
     for (const [selector, range] of Object.entries(readOverrides(WORKSPACE))) {
       assertResolvedOverride(lock, selector, range);
