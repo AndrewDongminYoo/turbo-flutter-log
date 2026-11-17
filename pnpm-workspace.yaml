@@ -4,7 +4,6 @@ allowBuilds:
   keytar: true
 
 overrides:
-  '@azure/identity@4>@azure/msal-node': ^7.1.2 # GHSA-xcx6-jx8p-x3h5; verify the actual parent API offline.
   '@eslint/config-array@0>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
   '@typescript-eslint/typescript-estree@8>minimatch': ^11.0.1 # GHSA-g3hv-75wg-m249
   '@vscode/test-cli@0>glob': ^14.0.2 # GHSA-3g3m-2fjr-6pw4

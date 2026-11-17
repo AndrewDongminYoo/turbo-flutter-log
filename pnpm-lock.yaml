@@ -172,7 +172,6 @@ settings:
   excludeLinksFromLockfile: false
 
 overrides:
-  '@azure/identity@4>@azure/msal-node': ^7.1.2
   '@eslint/config-array@0>minimatch': ^11.0.1
   '@typescript-eslint/typescript-estree@8>minimatch': ^11.0.1
   '@vscode/test-cli@0>glob': ^14.0.2
